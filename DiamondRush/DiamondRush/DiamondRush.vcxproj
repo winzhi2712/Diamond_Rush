@@ -142,7 +142,14 @@
     <ClCompile Include="DiamondRush.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Constantes.h" />
+    <ClInclude Include="Game.h" />
+    <ClInclude Include="HUD.h" />
     <ClInclude Include="Matrix.h" />
+    <ClInclude Include="Pantallas.h" />
+    <ClInclude Include="Render.h" />
+    <ClInclude Include="Terminal.h" />
+    <ClInclude Include="Tipos.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
