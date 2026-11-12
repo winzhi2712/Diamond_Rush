@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="DiamondRush/DiamondRush.vcxproj" />
+  <Project Path="DiamondRush/DiamondRush.vcxproj" Id="e730ff8a-4b2f-4b51-af6b-f6969165e1e6" />
 </Solution>

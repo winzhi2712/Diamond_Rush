@@ -39,10 +39,40 @@ void ocultarCursor() {
 
 
 //main loop
-int main()
-{
+int main() {   
+    SetConsoleOutputCP(65001);
+    string title1 = "████  ███  ███  █   █  ███  █   █ ████     ████  █   █  ████ █   █ ";
+    string title2 = "█   █  █  █   █ ██ ██ █   █ ██  █ █   █    █   █ █   █ █     █   █ ";
+    string title3 = "█   █  █  █████ █ █ █ █   █ █ █ █ █   █    ████  █   █  ███  █████ ";
+    string title4 = "█   █  █  █   █ █   █ █   █ █  ██ █   █    █  █  █   █     █ █   █ ";
+    string title5 = "████  ███ █   █ █   █  ███  █   █ ████     █   █  ███  ████  █   █ ";
+
+
+
+
+    bool menu = true;
     ocultarCursor();
-    Matrix<string> test(4, 4);
+
+    while (menu) {
+        system("cls");
+        cout << title1 << endl;
+        cout << title2 << endl;
+        cout << title3 << endl;
+        cout << title4 << endl;
+        cout << title5 << endl;
+        cout << "PRESS ENTER TO PLAY" << endl;
+        cout << "PRESS ESC TO EXIT";
+
+        int opcion = _getch();
+        if (opcion == 13)
+            menu = false;
+        else if (opcion == 27)
+            return 0;
+        
+    }
+
+
+    Matrix<string> test(10, 10);
     test.setValue(0, 0, "*");
     bool loop = true;
 
@@ -52,45 +82,50 @@ int main()
 
 
     while (loop == true) {
-        int tecla = inputs();
+        try {
+            int tecla = inputs();
 
-        if (tecla != 0) {
-            if (tecla == 'w') {
-                test.setValue(test.currentRow, test.currentCol, "");
-                test.setValue(test.currentRow - 1, test.currentCol, "*");
-                test.setCurrent(test.currentRow - 1, test.currentCol);
+            if (tecla != 0) {
+                if (tecla == 'w') {
+                    test.setValue(test.currentRow, test.currentCol, "");
+                    test.setValue(test.currentRow - 1, test.currentCol, "*");
+                    test.setCurrent(test.currentRow - 1, test.currentCol);
+                }
+
+                else if (tecla == 's') {
+                    test.setValue(test.currentRow, test.currentCol, "");
+                    test.setValue(test.currentRow + 1, test.currentCol, "*");
+                    test.setCurrent(test.currentRow + 1, test.currentCol);
+                }
+
+
+                else if (tecla == 'a') {
+                    test.setValue(test.currentRow, test.currentCol, "");
+                    test.setValue(test.currentRow, test.currentCol - 1, "*");
+                    test.setCurrent(test.currentRow, test.currentCol - 1);
+                }
+
+
+                else if (tecla == 'd') {
+                    test.setValue(test.currentRow, test.currentCol, "");
+                    test.setValue(test.currentRow, test.currentCol + 1, "*");
+                    test.setCurrent(test.currentRow, test.currentCol + 1);
+                }
+                else if (tecla == 27) {
+                    loop = false;
+                }
+                gotoxy(0, 0);
+                test.print();
             }
-
-            else if (tecla == 's') {
-                test.setValue(test.currentRow, test.currentCol, "");
-                test.setValue(test.currentRow + 1, test.currentCol, "*");
-                test.setCurrent(test.currentRow + 1, test.currentCol);
-            }
-
-
-            else if (tecla == 'a') {
-                test.setValue(test.currentRow, test.currentCol, "");
-                test.setValue(test.currentRow, test.currentCol - 1, "*");
-                test.setCurrent(test.currentRow, test.currentCol - 1);
-            }
-
-
-            else if (tecla == 'd') {
-                test.setValue(test.currentRow, test.currentCol, "");
-                test.setValue(test.currentRow, test.currentCol + 1, "*");
-                test.setCurrent(test.currentRow, test.currentCol + 1);
-            }
-            else if (tecla == 27) {
-                loop = false;
-            }
-            gotoxy(0, 0);
-            test.print();
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        catch (exception& e) {
+            cout << "Error: " << e.what() << endl;
+        }
     }
 }
 
-void assets() {
+/*void assets() {
     string title1 = "████  ███  ███  █   █  ███  █   █ ████     ████  █   █  ████ █   █ ";
     string title2 = "█   █  █  █   █ ██ ██ █   █ ██  █ █   █    █   █ █   █ █     █   █ ";
     string title3 = "█   █  █  █████ █ █ █ █   █ █ █ █ █   █    ████  █   █  ███  █████ ";
@@ -100,4 +135,4 @@ void assets() {
 
     string diamond1 = "\xE2\x99\xA6";
 
-}
+}/**/

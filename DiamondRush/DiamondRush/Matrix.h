@@ -37,16 +37,16 @@ public:
 	}
 	E getValue(int row, int column) {
 		if (row < 0 || row >= rows)
-			throw runtime_error("Invalid row.");
+			throw runtime_error("Out of bounds (row)");
 		if (column < 0 || column >= columns)
-			throw runtime_error("Invalid column");
+			throw runtime_error("Out of bounds (column)");
 		return matrix[row][column];
 	}
 	void setValue(int row, int column, E value) {
 		if (row < 0 || row >= rows)
-			throw runtime_error("Invalid row.");
+			throw runtime_error("Out of bounds (row)");
 		if (column < 0 || column >= columns)
-			throw runtime_error("Invalid column");
+			throw runtime_error("Out of bounds (column)");
 		matrix[row][column] = value;
 	}
 	int getRows() {
