@@ -11,6 +11,13 @@ enum class CellType {
     PLAYER = 4  //Jugador
 };
 
+//constantes para los caracteres
+const char CHAR_WALL = '#';
+const char CHAR_DIAMOND = '$';
+const char CHAR_BOULDER = 'O';
+const char CHAR_PLAYER = '&';
+const char CHAR_EMPTY = ' ';
+
 //Estados globales del juego
 enum class GameState {
     MENU = 0,
