@@ -5,6 +5,10 @@
 #include <thread>
 #include <windows.h>
 #include "Matrix.h"
+#include "Terminal.h"
+#include "Pantallas.h"
+#include "KeyMap.h"
+#include "Game.h"
 using namespace std;
 using namespace std::chrono;
 
@@ -47,28 +51,28 @@ int main() {
     string title4 = "█   █  █  █   █ █   █ █   █ █  ██ █   █    █  █  █   █     █ █   █ ";
     string title5 = "████  ███ █   █ █   █  ███  █   █ ████     █   █  ███  ████  █   █ ";
 
-
-
+    Terminal terminal;
+    terminal.init();
+    Game game;
+    KeyMap mapa;
 
     bool menu = true;
+    bool pause = false;
     ocultarCursor();
 
     while (menu) {
-        system("cls");
-        cout << title1 << endl;
-        cout << title2 << endl;
-        cout << title3 << endl;
-        cout << title4 << endl;
-        cout << title5 << endl;
-        cout << "PRESS ENTER TO PLAY" << endl;
-        cout << "PRESS ESC TO EXIT";
-
-        int opcion = _getch();
-        if (opcion == 13)
-            menu = false;
-        else if (opcion == 27)
-            return 0;
-        
+        terminal.clearTerminal();
+        Pantallas::mainTitle();
+        terminal.pollInputs();
+        int opcion = terminal.obtenerSiguiente();
+        if (opcion != 0) {
+            Mov movMenu = mapa.getMov(opcion);
+            if (movMenu == Mov::YES)
+                menu = !menu;
+            else if (movMenu == Mov::EXIT)
+                return 0;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
     }
 
 
@@ -76,45 +80,79 @@ int main() {
     test.setValue(0, 0, "*");
     bool loop = true;
 
-    system("cls");
-    gotoxy(0, 0);
+    terminal.clearTerminal();
+    terminal.gotoxy(0, 0);
     test.print();
 
 
     while (loop == true) {
+        if (game.perder()) {
+            loop = false;
+            break; ///////BREAK TEMPORAL, ODIO LOS BREAKS
+        }
+        terminal.gotoxy(0, 11);
+        cout << "TIEMPO: " << game.formatTime();
         try {
-            int tecla = inputs();
+            terminal.pollInputs();
+            int tecla = terminal.obtenerSiguiente();
 
             if (tecla != 0) {
-                if (tecla == 'w') {
+                Mov movimiento = mapa.getMov(tecla);
+                if (movimiento == Mov::UP) {
                     test.setValue(test.currentRow, test.currentCol, "");
                     test.setValue(test.currentRow - 1, test.currentCol, "*");
                     test.setCurrent(test.currentRow - 1, test.currentCol);
                 }
 
-                else if (tecla == 's') {
+                else if (movimiento == Mov::DOWN) {
                     test.setValue(test.currentRow, test.currentCol, "");
                     test.setValue(test.currentRow + 1, test.currentCol, "*");
                     test.setCurrent(test.currentRow + 1, test.currentCol);
                 }
 
 
-                else if (tecla == 'a') {
+                else if (movimiento == Mov::LEFT) {
                     test.setValue(test.currentRow, test.currentCol, "");
                     test.setValue(test.currentRow, test.currentCol - 1, "*");
                     test.setCurrent(test.currentRow, test.currentCol - 1);
                 }
 
 
-                else if (tecla == 'd') {
+                else if (movimiento == Mov::RIGHT) {
                     test.setValue(test.currentRow, test.currentCol, "");
                     test.setValue(test.currentRow, test.currentCol + 1, "*");
                     test.setCurrent(test.currentRow, test.currentCol + 1);
                 }
-                else if (tecla == 27) {
+                else if (movimiento == Mov::PAUSE) {
+                    pause = !pause;
+                    terminal.clearTerminal();
+                    Pantallas::pause();
+                    while (pause) {
+                        terminal.pollInputs();
+                        int teclaPause = terminal.obtenerSiguiente();
+
+                        if (teclaPause != 0) {
+
+                            Mov movPause = mapa.getMov(teclaPause);
+                            if (movPause == Mov::YES) {
+                                pause = !pause;
+                                terminal.clearTerminal();
+                                terminal.gotoxy(0, 0);
+                                test.print();
+                            }
+                            else if (movPause == Mov::EXIT) {
+                                pause = !pause;
+                                loop = !loop;
+                            }
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                    }
+                }
+
+                else if (movimiento == Mov::EXIT) {
                     loop = false;
                 }
-                gotoxy(0, 0);
+                terminal.gotoxy(0, 0);
                 test.print();
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
@@ -124,15 +162,3 @@ int main() {
         }
     }
 }
-
-/*void assets() {
-    string title1 = "████  ███  ███  █   █  ███  █   █ ████     ████  █   █  ████ █   █ ";
-    string title2 = "█   █  █  █   █ ██ ██ █   █ ██  █ █   █    █   █ █   █ █     █   █ ";
-    string title3 = "█   █  █  █████ █ █ █ █   █ █ █ █ █   █    ████  █   █  ███  █████ ";
-    string title4 = "█   █  █  █   █ █   █ █   █ █  ██ █   █    █  █  █   █     █ █   █ ";
-    string title5 = "████  ███ █   █ █   █  ███  █   █ ████     █   █  ███  ████  █   █ ";
-
-
-    string diamond1 = "\xE2\x99\xA6";
-
-}/**/

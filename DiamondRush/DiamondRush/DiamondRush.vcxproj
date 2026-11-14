@@ -145,6 +145,7 @@
     <ClInclude Include="Constantes.h" />
     <ClInclude Include="Game.h" />
     <ClInclude Include="HUD.h" />
+    <ClInclude Include="KeyMap.h" />
     <ClInclude Include="Matrix.h" />
     <ClInclude Include="Pantallas.h" />
     <ClInclude Include="Render.h" />
