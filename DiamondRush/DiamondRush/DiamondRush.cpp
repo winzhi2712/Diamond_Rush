@@ -4,15 +4,18 @@
 #include <conio.h>
 #include <thread>
 #include <windows.h>
+#include "constantes.h"
+#include "MapLoader.h"
 #include "Matrix.h"
 #include "Terminal.h"
 #include "Pantallas.h"
 #include "KeyMap.h"
 #include "Game.h"
+
 using namespace std;
 using namespace std::chrono;
 
-//inputs
+// inputs
 int inputs() {
     if (_kbhit()) {
         int tecla = _getch();
@@ -24,8 +27,7 @@ int inputs() {
     return 0;
 }
 
-
-//funciones para impresion
+// funciones para impresion
 void gotoxy(int x, int y) {
     COORD coord;
     coord.X = x;
@@ -41,15 +43,15 @@ void ocultarCursor() {
     SetConsoleCursorInfo(hConsole, &cursorInfo);
 }
 
-
-//main loop
-int main() {   
+// main loop
+int main() {    
     SetConsoleOutputCP(65001);
+
     string title1 = "████  ███  ███  █   █  ███  █   █ ████     ████  █   █  ████ █   █ ";
-    string title2 = "█   █  █  █   █ ██ ██ █   █ ██  █ █   █    █   █ █   █ █     █   █ ";
-    string title3 = "█   █  █  █████ █ █ █ █   █ █ █ █ █   █    ████  █   █  ███  █████ ";
-    string title4 = "█   █  █  █   █ █   █ █   █ █  ██ █   █    █  █  █   █     █ █   █ ";
-    string title5 = "████  ███ █   █ █   █  ███  █   █ ████     █   █  ███  ████  █   █ ";
+    string title2 = "█   █  █  █   █ ██ ██ █   █ ██  █ █   █     █   █ █   █ █     █   █ ";
+    string title3 = "█   █  █  █████ █ █ █ █   █ █ █ █ █   █     ████  █   █  ███  █████ ";
+    string title4 = "█   █  █  █   █ █   █ █   █ █  ██ █   █     █   █ █   █     █ █   █ ";
+    string title5 = "████  ███ █   █ █   █  ███  █   █ ████      █   █  ███  ████  █   █ ";
 
     Terminal terminal;
     terminal.init();
@@ -60,6 +62,7 @@ int main() {
     bool pause = false;
     ocultarCursor();
 
+    // Bucle del menú (sin breaks)
     while (menu) {
         terminal.clearTerminal();
         Pantallas::mainTitle();
@@ -67,93 +70,131 @@ int main() {
         int opcion = terminal.obtenerSiguiente();
         if (opcion != 0) {
             Mov movMenu = mapa.getMov(opcion);
-            if (movMenu == Mov::YES)
-                menu = !menu;
-            else if (movMenu == Mov::EXIT)
+            if (movMenu == Mov::YES) {
+                menu = false;
+            }
+            else if (movMenu == Mov::EXIT) {
                 return 0;
+            }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(30));
     }
 
+    // Cargamos el nivel real desde el archivo de texto
+    terminal.clearTerminal();
+    cout << "Cargando nivel 1..." << endl;
+    
+    GameMap nivelActual = MapLoader::cargarNivel("nivel1.txt");
 
-    Matrix<string> test(10, 10);
-    test.setValue(0, 0, "*");
+    int playerX = nivelActual.playerX;
+    int playerY = nivelActual.playerY;
+
     bool loop = true;
 
     terminal.clearTerminal();
     terminal.gotoxy(0, 0);
-    test.print();
 
+    // Dibujamos el mapa inicial usando puros ifs (cero switch)
+    for (int fila = 0; fila < MAP_HEIGHT; ++fila) {
+        for (int col = 0; col < MAP_WIDTH; ++col) {
+            CellType celda = nivelActual.grid[fila][col];
 
-    while (loop == true) {
-        if (game.perder()) {
-            loop = false;
-            break; ///////BREAK TEMPORAL, ODIO LOS BREAKS
+            if (celda == CellType::WALL) {
+                cout << ANSI_WALL << " " << ANSI_RESET;
+            }
+            else if (celda == CellType::PLAYER) {
+                cout << ANSI_PLAYER << CHAR_PLAYER << ANSI_RESET;
+            }
+            else if (celda == CellType::EXIT) {
+                cout << ANSI_DIAMOND << CHAR_EXIT << ANSI_RESET;
+            }
+            else if (celda == CellType::DIAMOND) {
+                cout << ANSI_DIAMOND << CHAR_DIAMOND << ANSI_RESET;
+            }
+            else if (celda == CellType::ROCK) {
+                cout << ANSI_ROCK << CHAR_ROCK << ANSI_RESET;
+            }
+            else {
+                cout << CHAR_EMPTY;
+            }
         }
-        terminal.gotoxy(0, 11);
-        cout << "TIEMPO: " << game.formatTime();
+        cout << endl;
+    }
+
+    // Bucle principal del juego (controlado por bandera y sin breaks)
+    while (loop == true && !game.perder()) {
+        
+        terminal.gotoxy(0, MAP_HEIGHT + 1);
+        cout << "TIEMPO: " << game.formatTime() << "   ";
+
         try {
             terminal.pollInputs();
             int tecla = terminal.obtenerSiguiente();
 
             if (tecla != 0) {
                 Mov movimiento = mapa.getMov(tecla);
+                int nuevoX = playerX;
+                int nuevoY = playerY;
+
                 if (movimiento == Mov::UP) {
-                    test.setValue(test.currentRow, test.currentCol, "");
-                    test.setValue(test.currentRow - 1, test.currentCol, "*");
-                    test.setCurrent(test.currentRow - 1, test.currentCol);
+                    nuevoY--;
                 }
-
                 else if (movimiento == Mov::DOWN) {
-                    test.setValue(test.currentRow, test.currentCol, "");
-                    test.setValue(test.currentRow + 1, test.currentCol, "*");
-                    test.setCurrent(test.currentRow + 1, test.currentCol);
+                    nuevoY++;
                 }
-
-
                 else if (movimiento == Mov::LEFT) {
-                    test.setValue(test.currentRow, test.currentCol, "");
-                    test.setValue(test.currentRow, test.currentCol - 1, "*");
-                    test.setCurrent(test.currentRow, test.currentCol - 1);
+                    nuevoX--;
                 }
-
-
                 else if (movimiento == Mov::RIGHT) {
-                    test.setValue(test.currentRow, test.currentCol, "");
-                    test.setValue(test.currentRow, test.currentCol + 1, "*");
-                    test.setCurrent(test.currentRow, test.currentCol + 1);
+                    nuevoX++;
                 }
                 else if (movimiento == Mov::PAUSE) {
-                    pause = !pause;
+                    pause = true;
                     terminal.clearTerminal();
                     Pantallas::pause();
+                    
                     while (pause) {
                         terminal.pollInputs();
                         int teclaPause = terminal.obtenerSiguiente();
 
                         if (teclaPause != 0) {
-
                             Mov movPause = mapa.getMov(teclaPause);
                             if (movPause == Mov::YES) {
-                                pause = !pause;
+                                pause = false;
                                 terminal.clearTerminal();
                                 terminal.gotoxy(0, 0);
-                                test.print();
+                                // Opcional: Redibujar mapa si lo requieres al salir de pausa
                             }
                             else if (movPause == Mov::EXIT) {
-                                pause = !pause;
-                                loop = !loop;
+                                pause = false;
+                                loop = false;
                             }
                         }
                         std::this_thread::sleep_for(std::chrono::milliseconds(30));
                     }
                 }
-
                 else if (movimiento == Mov::EXIT) {
                     loop = false;
                 }
-                terminal.gotoxy(0, 0);
-                test.print();
+
+                // Lógica de movimiento y validación de colisiones con puros ifs
+                if (nuevoX >= 0 && nuevoX < MAP_WIDTH && nuevoY >= 0 && nuevoY < MAP_HEIGHT) {
+                    if (nivelActual.grid[nuevoY][nuevoX] != CellType::WALL) {
+                        // Limpiamos la posición vieja en la matriz lógica y en pantalla
+                        nivelActual.grid[playerY][playerX] = CellType::EMPTY;
+                        terminal.gotoxy(playerX, playerY);
+                        cout << CHAR_EMPTY;
+
+                        // Actualizamos las coordenadas del jugador
+                        playerX = nuevoX;
+                        playerY = nuevoY;
+
+                        // Colocamos al jugador en la nueva posición
+                        nivelActual.grid[playerY][playerX] = CellType::PLAYER;
+                        terminal.gotoxy(playerX, playerY);
+                        cout << ANSI_PLAYER << CHAR_PLAYER << ANSI_RESET;
+                    }
+                }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(30));
         }
@@ -161,4 +202,6 @@ int main() {
             cout << "Error: " << e.what() << endl;
         }
     }
+
+    return 0;
 }

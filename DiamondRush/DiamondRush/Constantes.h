@@ -21,9 +21,21 @@ const string ANSI_ROCK = "\033[33m";    // Amarillo/Marrón
 const string ANSI_PLAYER = "\033[32m";    // Verde 
 const string ANSI_EMPTY = "\033[0m";
 
-// Caracteres visuales en modo texto para cada celda
-const char CHAR_WALL = '#';
-const char CHAR_DIAMOND = '$';
-const char CHAR_ROCK = 'O';
-const char CHAR_PLAYER = '&';
-const char CHAR_EMPTY = ' ';
+enum class CellType {
+    EMPTY,
+    WALL,
+    PLAYER,
+    EXIT,
+    DIAMOND,
+    ROCK
+};
+
+
+// Aqui Axel, voy hacer estos cambios de prueba no sé todavía si funcionarán, pero quiero probarlos.    
+
+// Definimos los símbolos exactos que usaste en tus niveles:
+const char CHAR_PLAYER = '☺';      // La carita feliz que elegiste
+const char CHAR_EXIT = '∏';        // El símbolo matemático de salida
+const char CHAR_DIAMOND = '◆';     // El rombo para futuras gemas
+const char CHAR_ROCK = '●';        // La roca segura
+const char CHAR_EMPTY = ' ';       // Espacio libre
