@@ -1,5 +1,4 @@
 #pragma once
-//Se encarga del renderizado del juego y la actualizacion de celdas
 #include <iostream>
 #include <string>
 #include "Matrix.h"
@@ -13,54 +12,71 @@ using std::to_string;
 using std::flush;
 
 struct RenderCell {
-    char character;
+    string character;
     string color;
 };
 
-class Render{
+class Render {
 private:
-    //Buffer individuales para los elementos del mapa
     Matrix<CellType> mapBuffer;
     Matrix<CellType> entitiesBuffer;
-
-    //Buffer de HUD, tiene texto en lugar de tipo de celda
     Matrix<string> hudBuffer;
-
-    //Buffer final para renderizar en conjunto
     Matrix<RenderCell> finalBuffer;
-
-    //Buffer de frame anterior para comparar
     Matrix<RenderCell> previousFrame;
+    Matrix<string> wallGlyphBuffer;
 
-    //Funcion auxiliar que saca el tipo de char
-    char getCharacter(CellType type) {
+    string getCharacter(CellType type) {
         switch (type) {
-            case CellType::WALL:
-                return CHAR_WALL;
-            case CellType::DIAMOND:
-                return CHAR_DIAMOND;
-            case CellType::ROCK:
-                return CHAR_ROCK;
-            case CellType::PLAYER:
-                return CHAR_PLAYER;
-            default:
-                return CHAR_EMPTY;
+        case CellType::WALL:
+            return WALL_H;
+        case CellType::DIAMOND:
+            return CHAR_DIAMOND;
+        case CellType::ROCK:
+            return CHAR_ROCK;
+        case CellType::PLAYER:
+            return CHAR_PLAYER;
+        case CellType::EXIT:
+            return CHAR_EXIT;
+        case CellType::ENEMY:
+        case CellType::ENEMY_H:
+        case CellType::ENEMY_V:
+            return "ʃ";
+        case CellType::BUTTON:
+            return "o";
+        case CellType::DOOR:
+            return "H";
+        case CellType::BUSH:
+            return "₪";
+        default:
+            return CHAR_EMPTY;
         }
     }
 
-    //Funcion auxiliar para sacar el color
     string getColor(CellType type) {
         switch (type) {
-            case CellType::WALL:
-                return ANSI_WALL;
-            case CellType::DIAMOND:
-                return ANSI_DIAMOND;
-            case CellType::ROCK:
-                return ANSI_ROCK;
-            case CellType::PLAYER:
-                return ANSI_PLAYER;
-            default:
-                return ANSI_EMPTY;
+        case CellType::WALL:
+            return ANSI_WALL;
+        case CellType::DIAMOND:
+            return "\033[95m";
+        case CellType::ROCK:
+            return "\033[37m";   // gris
+        case CellType::PLAYER:
+            return "\033[93m";   // amarillo brillante
+        case CellType::EXIT:
+            return ANSI_DIAMOND;
+        case CellType::ENEMY:
+        case CellType::ENEMY_H:
+            return "\033[32m";   // verde
+        case CellType::ENEMY_V:
+            return "\033[31m";   // rojo
+        case CellType::BUTTON:
+            return "\033[33m";   // amarillo oscuro
+        case CellType::DOOR:
+            return "\033[36m";   // cian
+        case CellType::BUSH:
+            return "\033[92m";   // verde brillante
+        default:
+            return ANSI_EMPTY;
         }
     }
 
@@ -70,108 +86,75 @@ public:
         entitiesBuffer(rows, cols),
         hudBuffer(2, cols),
         finalBuffer(rows + 2, cols),
-        previousFrame(rows + 2, cols) {
+        previousFrame(rows + 2, cols),
+        wallGlyphBuffer(rows, cols) {
 
-            mapBuffer.setAll(CellType::EMPTY);
-            entitiesBuffer.setAll(CellType::EMPTY);
-            hudBuffer.setAll(" ");
-            finalBuffer.setAll({' ', ANSI_RESET});
-            previousFrame.setAll({' ', ANSI_RESET});
-        }
-
-    //Getters
-    Matrix<CellType>& getMapBuffer() {
-        return mapBuffer;
+        mapBuffer.setAll(CellType::EMPTY);
+        entitiesBuffer.setAll(CellType::EMPTY);
+        hudBuffer.setAll(" ");
+        finalBuffer.setAll({ CHAR_EMPTY, ANSI_RESET });
+        previousFrame.setAll({ CHAR_EMPTY, ANSI_RESET });
+        wallGlyphBuffer.setAll(WALL_H);
     }
 
-    Matrix<CellType>& getEntitiesBuffer() {
-        return entitiesBuffer;
+    Matrix<CellType>& getMapBuffer() { return mapBuffer; }
+    Matrix<CellType>& getEntitiesBuffer() { return entitiesBuffer; }
+    Matrix<string>& getHUDBuffer() { return hudBuffer; }
+    Matrix<string>& getWallGlyphBuffer() { return wallGlyphBuffer; }
+
+    // Obliga a redibujar todo en el siguiente frame (por ejemplo, al volver de la pausa)
+    void forceFullRedraw() {
+        previousFrame.setAll({ "\x01", "" });   // valor imposible: todo se considera distinto
     }
 
-    Matrix<string>& getHUDBuffer() {
-        return hudBuffer;
-    }
-
-    //Funciones de renderizado
     void combineBuffers() {
-        //proceso para combinar buffer de mapa y entidades
         for (int r = 0; r < mapBuffer.getRows(); r++) {
             for (int c = 0; c < mapBuffer.getColumns(); c++) {
-                //Sacar los valores que hay en esa celda
                 CellType entity = entitiesBuffer.getValue(r, c);
                 CellType map = mapBuffer.getValue(r, c);
 
-                //Celda final que se va elegir
-                CellType selected;
+                CellType selected = (entity != CellType::EMPTY) ? entity : map;
 
-                //Siempre que exista algo por encima de una celda vacia se elige a esa cosa
-                if (entity != CellType::EMPTY) {
-                    selected = entity; //seleccion de cosa
-                } else {
-                    selected = map; //mapa entonces
-                }
-
-                //Convertir a estructura de rendercell
                 RenderCell cell;
                 cell.character = getCharacter(selected);
                 cell.color = getColor(selected);
 
-                //llenar el buffer final y +2 ya que el HUD utiliza las primeras dos filas
-                finalBuffer.setValue(r+2, c, cell);
+                if (selected == CellType::WALL) {
+                    cell.character = wallGlyphBuffer.getValue(r, c);
+                }
+
+                finalBuffer.setValue(r + 2, c, cell);
             }
         }
 
-        //proceso para agregar hud al buffer final
         for (int r = 0; r < hudBuffer.getRows(); r++) {
             for (int c = 0; c < hudBuffer.getColumns(); c++) {
                 string charActual = hudBuffer.getValue(r, c);
-                
-                //celda final
                 RenderCell cell;
-                if (charActual.empty()) {
-                    cell.character = ' ';
-                } else {
-                    cell.character = charActual[0];
-                }
+                cell.character = charActual.empty() ? CHAR_EMPTY : string(1, charActual[0]);
                 cell.color = ANSI_RESET;
-
-                //llenar nuevamente para HUD
                 finalBuffer.setValue(r, c, cell);
             }
         }
     }
 
-    //funcion donde se imprime solo lo cambiado
     void renderDifferential() {
         string output = "";
         for (int r = 0; r < finalBuffer.getRows(); r++) {
             for (int c = 0; c < finalBuffer.getColumns(); c++) {
-                //Sacar celda actual y anterior
                 RenderCell current = finalBuffer.getValue(r, c);
                 RenderCell previous = previousFrame.getValue(r, c);
 
-                //revisa si cambia algo
                 if (current.character != previous.character || current.color != previous.color) {
-                    
-                    //mueve el cursor a la ubicacion
-                    output += "\033[" + to_string(r + 1) + ";" + to_string(c + 1) + "H"; 
-
-                    //Se aplica el color nuevo
+                    output += "\033[" + to_string(r + 1) + ";" + to_string(c + 1) + "H";
                     output += current.color;
-
-                    //Imprime el caracter
                     output += current.character;
-
-                    //Resetea el color de la terminal
                     output += ANSI_RESET;
 
-                    //Se hace un update del frame anterior
                     previousFrame.setValue(r, c, current);
                 }
             }
         }
-
         cout << output << flush;
     }
 };
-

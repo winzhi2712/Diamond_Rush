@@ -1,15 +1,28 @@
 #pragma once
-
 #include <string>
 #include <vector>
 #include <fstream>
 #include <iostream>
 #include "Constantes.h"
+#include "Tipos.h"
+
+struct EnemigoInfo {
+    int fila = 0;
+    int col = 0;
+    int dirFila = 0;
+    int dirCol = 1;
+    int ticks = 6;         // Velocidad fluida
+    bool persigue = false;
+    CellType tipoCelda = CellType::ENEMY_H;
+};
 
 struct GameMap {
-    std::vector<std::vector<CellType>> grid;
-    int playerX = 0;
-    int playerY = 0;
+    std::vector<std::vector<CellType>> grid;         // Capa fija (paredes, salida, botones, puertas, arbustos)
+    std::vector<std::vector<CellType>> entities;     // Capa móvil (rocas, diamantes)
+    std::vector<std::vector<std::string>> glyphs;    // Símbolo original de cada pared (.txt)
+    int playerX = 0;   // columna
+    int playerY = 0;   // fila
+    std::vector<EnemigoInfo> enemigos;
 };
 
 class MapLoader {
@@ -17,6 +30,8 @@ public:
     inline static GameMap cargarNivel(const std::string& rutaArchivo) {
         GameMap mapaJuego;
         mapaJuego.grid = std::vector<std::vector<CellType>>(MAP_HEIGHT, std::vector<CellType>(MAP_WIDTH, CellType::EMPTY));
+        mapaJuego.entities = std::vector<std::vector<CellType>>(MAP_HEIGHT, std::vector<CellType>(MAP_WIDTH, CellType::EMPTY));
+        mapaJuego.glyphs = std::vector<std::vector<std::string>>(MAP_HEIGHT, std::vector<std::string>(MAP_WIDTH, WALL_H));
 
         std::ifstream archivo(rutaArchivo);
         if (!archivo.is_open()) {
@@ -29,12 +44,11 @@ public:
 
         while (std::getline(archivo, linea) && fila < MAP_HEIGHT) {
             int col = 0;
-            // Recorremos la línea manejando correctamente los caracteres UTF-8 (que pueden ocupar varios bytes)
             for (size_t i = 0; i < linea.size() && col < MAP_WIDTH; ) {
                 unsigned char c = linea[i];
                 std::string simbolo = "";
 
-                // Determinamos cuántos bytes conforman el carácter actual en UTF-8
+                // Cuántos bytes tiene el carácter UTF-8 actual
                 size_t numBytes = 1;
                 if (c >= 0xFC) numBytes = 6;
                 else if (c >= 0xF8) numBytes = 5;
@@ -42,40 +56,74 @@ public:
                 else if (c >= 0xE0) numBytes = 3;
                 else if (c >= 0xC0) numBytes = 2;
 
-                // Extraemos el símbolo completo (sea de 1 o varios bytes)
                 if (i + numBytes <= linea.size()) {
                     simbolo = linea.substr(i, numBytes);
-                } else {
+                }
+                else {
                     simbolo = std::string(1, c);
                 }
 
-                // 1. Mapeo de paredes (comparamos con la cadena UTF-8 completa)
-                if (simbolo == "╔" || simbolo == "╗" || simbolo == "╚" || simbolo == "╝" || 
-                    simbolo == "═" || simbolo == "║" || simbolo == "╦" || simbolo == "╩" || 
-                    simbolo == "╠" || simbolo == "╣" || simbolo == "╬" || simbolo == "▩" || simbolo == string(1, CHAR_WALL)) {
+                // 1. Paredes (capa fija, guardando el símbolo original)
+                if (simbolo == "╔" || simbolo == "╗" || simbolo == "╚" || simbolo == "╝" ||
+                    simbolo == "═" || simbolo == "║" || simbolo == "╦" || simbolo == "╩" ||
+                    simbolo == "╠" || simbolo == "╣" || simbolo == "╬" || simbolo == "▩" ||
+                    simbolo == WALL_H || simbolo == WALL_V || simbolo == WALL_TL ||
+                    simbolo == WALL_TR || simbolo == WALL_BL || simbolo == WALL_BR || simbolo == "#") {
                     mapaJuego.grid[fila][col] = CellType::WALL;
+                    mapaJuego.glyphs[fila][col] = simbolo;
                 }
-                // 2. Mapeo del jugador
-                else if (simbolo == "☺" || simbolo == "P" || simbolo == string(1, CHAR_PLAYER)) {
-                    mapaJuego.grid[fila][col] = CellType::PLAYER;
+                // 2. Jugador (solo se guarda su posición; lo coloca Fisica)
+                else if (simbolo == "☺" || simbolo == "P" || simbolo == CHAR_PLAYER) {
                     mapaJuego.playerX = col;
                     mapaJuego.playerY = fila;
                 }
-                // 3. Mapeo de la salida
-                else if (simbolo == "∏" || simbolo == string(1, CHAR_EXIT)) {
+                // 3. Salida
+                else if (simbolo == "∏" || simbolo == "Π" || simbolo == CHAR_EXIT) {
                     mapaJuego.grid[fila][col] = CellType::EXIT;
                 }
-                // 4. Mapeo de diamantes
-                else if (simbolo == "◆" || simbolo == string(1, CHAR_DIAMOND)) {
-                    mapaJuego.grid[fila][col] = CellType::DIAMOND;
+                // 4. Diamantes (capa móvil)
+                else if (simbolo == "◆" || simbolo == CHAR_DIAMOND) {
+                    mapaJuego.entities[fila][col] = CellType::DIAMOND;
                 }
-                // 5. Mapeo de rocas
-                else if (simbolo == "●" || simbolo == string(1, CHAR_ROCK)) {
-                    mapaJuego.grid[fila][col] = CellType::ROCK;
+                // 5. Rocas (capa móvil, para que caigan y se empujen)
+                else if (simbolo == "●" || simbolo == CHAR_ROCK) {
+                    mapaJuego.entities[fila][col] = CellType::ROCK;
                 }
-                // 6. Espacios vacíos
-                else {
-                    mapaJuego.grid[fila][col] = CellType::EMPTY;
+                // 6. Arbustos destructibles (capa fija)
+                else if (simbolo == "▒" || simbolo == "░" || simbolo == "B" || simbolo == "❀") {
+                    mapaJuego.grid[fila][col] = CellType::BUSH;
+                }
+                // 7. Botón (capa fija)
+                else if (simbolo == "o") {
+                    mapaJuego.grid[fila][col] = CellType::BUTTON;
+                }
+                // 8. Puerta (capa fija)
+                else if (simbolo == "H") {
+                    mapaJuego.grid[fila][col] = CellType::DOOR;
+                }
+                // 9. Enemigo horizontal
+                else if (simbolo == "ʃ") {
+                    EnemigoInfo ene;
+                    ene.fila = fila;
+                    ene.col = col;
+                    ene.dirFila = 0;
+                    ene.dirCol = 1;
+                    ene.ticks = 6;
+                    ene.persigue = false;
+                    ene.tipoCelda = CellType::ENEMY_H;
+                    mapaJuego.enemigos.push_back(ene);
+                }
+                // 10. Enemigo vertical
+                else if (simbolo == "௹") {
+                    EnemigoInfo ene;
+                    ene.fila = fila;
+                    ene.col = col;
+                    ene.dirFila = 1;
+                    ene.dirCol = 0;
+                    ene.ticks = 6;
+                    ene.persigue = false;
+                    ene.tipoCelda = CellType::ENEMY_V;
+                    mapaJuego.enemigos.push_back(ene);
                 }
 
                 i += numBytes;

@@ -1,207 +1,298 @@
 #include <iostream>
 #include <string>
 #include <chrono>
-#include <conio.h>
 #include <thread>
-#include <windows.h>
-#include "constantes.h"
+#include <vector>
+#include <utility>
+#include "Constantes.h"
+#include "Tipos.h"
 #include "MapLoader.h"
 #include "Matrix.h"
 #include "Terminal.h"
+#include "Render.h"
 #include "Pantallas.h"
 #include "KeyMap.h"
 #include "Game.h"
+#include "Fisica.h"
+#include "HUD.h"
+#include "Puntajes.h"
 
 using namespace std;
 using namespace std::chrono;
 
-// inputs
-int inputs() {
-    if (_kbhit()) {
-        int tecla = _getch();
-        if (tecla == 224 || tecla == 0) {
-            tecla = _getch() + 256;
-        }
-        return tecla;
-    }
-    return 0;
-}
+const int TOTAL_NIVELES = 3;
 
-// funciones para impresion
-void gotoxy(int x, int y) {
-    COORD coord;
-    coord.X = x;
-    coord.Y = y;
-    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), coord);
-}
-
-void ocultarCursor() {
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    CONSOLE_CURSOR_INFO cursorInfo;
-    GetConsoleCursorInfo(hConsole, &cursorInfo);
-    cursorInfo.bVisible = FALSE;
-    SetConsoleCursorInfo(hConsole, &cursorInfo);
-}
-
-// main loop
-int main() {    
-    SetConsoleOutputCP(65001);
-
-    string title1 = "████  ███  ███  █   █  ███  █   █ ████     ████  █   █  ████ █   █ ";
-    string title2 = "█   █  █  █   █ ██ ██ █   █ ██  █ █   █     █   █ █   █ █     █   █ ";
-    string title3 = "█   █  █  █████ █ █ █ █   █ █ █ █ █   █     ████  █   █  ███  █████ ";
-    string title4 = "█   █  █  █   █ █   █ █   █ █  ██ █   █     █   █ █   █     █ █   █ ";
-    string title5 = "████  ███ █   █ █   █  ███  █   █ ████      █   █  ███  ████  █   █ ";
+int main() {
+#ifdef _WIN32
+    SetConsoleOutputCP(65001); // Configurar consola en UTF-8 para Windows
+#endif
 
     Terminal terminal;
     terminal.init();
     Game game;
-    KeyMap mapa;
+    KeyMap keyMap;
+    Puntajes puntajes;   // Top 5 de puntajes, guardado en puntajes.txt
 
-    bool menu = true;
-    bool pause = false;
-    ocultarCursor();
+    // Coordenadas de las gemas ya recolectadas en el nivel actual
+    vector<pair<int, int>> gemasRecolectadasSession;
 
-    // Bucle del menú (sin breaks)
-    while (menu) {
+    if (!terminal.checkMinSize()) {
+        cout << "Advertencia: La terminal es muy pequeña. Se recomienda al menos "
+            << MIN_TERMINAL_WIDTH << "x" << MIN_TERMINAL_HEIGHT << "." << endl;
+    }
+
+    GameState estadoActual = GameState::MENU;
+
+    GameMap nivelActual;
+    Render* render = nullptr;
+    Fisica* fisica = nullptr;
+
+    bool ejecutandoJuego = true;
+    int numeroNivel = 1;
+
+    // Carga el nivel indicado por numeroNivel (nivel1.txt, nivel2.txt, nivel3.txt)
+    auto cargarNivelActual = [&]() {
+        string ruta = "nivel" + to_string(numeroNivel) + ".txt";
+        nivelActual = MapLoader::cargarNivel(ruta);
+
+        if (render != nullptr) delete render;
+        render = new Render(MAP_HEIGHT, MAP_WIDTH);
+
+        for (int r = 0; r < MAP_HEIGHT; r++) {
+            for (int c = 0; c < MAP_WIDTH; c++) {
+                render->getMapBuffer().setValue(r, c, nivelActual.grid[r][c]);
+                render->getEntitiesBuffer().setValue(r, c, nivelActual.entities[r][c]);
+                render->getWallGlyphBuffer().setValue(r, c, nivelActual.glyphs[r][c]);
+            }
+        }
+
+        if (fisica != nullptr) delete fisica;
+        fisica = new Fisica(render->getMapBuffer(), render->getEntitiesBuffer());
+        // colocarJugador recibe (fila, columna)
+        fisica->colocarJugador(nivelActual.playerY, nivelActual.playerX);
+
+        for (const auto& ene : nivelActual.enemigos) {
+            fisica->agregarEnemigo(ene.fila, ene.col, ene.dirFila, ene.dirCol, ene.ticks, ene.persigue, ene.tipoCelda);
+        }
+
         terminal.clearTerminal();
-        Pantallas::mainTitle();
-        terminal.pollInputs();
-        int opcion = terminal.obtenerSiguiente();
-        if (opcion != 0) {
-            Mov movMenu = mapa.getMov(opcion);
-            if (movMenu == Mov::YES) {
-                menu = false;
-            }
-            else if (movMenu == Mov::EXIT) {
-                return 0;
-            }
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(30));
-    }
+        };
 
-    // Cargamos el nivel real desde el archivo de texto
-    terminal.clearTerminal();
-    cout << "Cargando nivel 1..." << endl;
-    
-    GameMap nivelActual = MapLoader::cargarNivel("nivel1.txt");
+    while (ejecutandoJuego) {
 
-    int playerX = nivelActual.playerX;
-    int playerY = nivelActual.playerY;
+        // ==========================================
+        // ESTADO: MENÚ PRINCIPAL
+        // ==========================================
+        if (estadoActual == GameState::MENU) {
+            terminal.clearTerminal();
+            Pantallas::mainTitle();
+            cout << "\n\n";
+            puntajes.imprimir();
+            cout << flush;
 
-    bool loop = true;
+            bool enMenu = true;
+            while (enMenu && ejecutandoJuego) {
+                terminal.pollInputs();
+                int tecla = terminal.obtenerSiguiente();
+                if (tecla != 0) {
+                    Mov mov = keyMap.getMov(tecla);
+                    if (mov == Mov::YES) {
+                        game.reset();
+                        numeroNivel = 1;
+                        gemasRecolectadasSession.clear();
+                        cargarNivelActual();
 
-    terminal.clearTerminal();
-    terminal.gotoxy(0, 0);
-
-    // Dibujamos el mapa inicial usando puros ifs (cero switch)
-    for (int fila = 0; fila < MAP_HEIGHT; ++fila) {
-        for (int col = 0; col < MAP_WIDTH; ++col) {
-            CellType celda = nivelActual.grid[fila][col];
-
-            if (celda == CellType::WALL) {
-                cout << ANSI_WALL << " " << ANSI_RESET;
-            }
-            else if (celda == CellType::PLAYER) {
-                cout << ANSI_PLAYER << CHAR_PLAYER << ANSI_RESET;
-            }
-            else if (celda == CellType::EXIT) {
-                cout << ANSI_DIAMOND << CHAR_EXIT << ANSI_RESET;
-            }
-            else if (celda == CellType::DIAMOND) {
-                cout << ANSI_DIAMOND << CHAR_DIAMOND << ANSI_RESET;
-            }
-            else if (celda == CellType::ROCK) {
-                cout << ANSI_ROCK << CHAR_ROCK << ANSI_RESET;
-            }
-            else {
-                cout << CHAR_EMPTY;
+                        estadoActual = GameState::PLAYING;
+                        enMenu = false;
+                    }
+                    else if (mov == Mov::EXIT) {
+                        ejecutandoJuego = false;
+                        enMenu = false;
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
             }
         }
-        cout << endl;
-    }
 
-    // Bucle principal del juego (controlado por bandera y sin breaks)
-    while (loop == true && !game.perder()) {
-        
-        terminal.gotoxy(0, MAP_HEIGHT + 1);
-        cout << "TIEMPO: " << game.formatTime() << "   ";
-
-        try {
+        // ==========================================
+        // ESTADO: JUGANDO
+        // ==========================================
+        else if (estadoActual == GameState::PLAYING) {
             terminal.pollInputs();
             int tecla = terminal.obtenerSiguiente();
+            terminal.limpiarBuffer();   // evita que se acumulen teclas y el personaje siga moviéndose
 
+            Mov movimiento = Mov::VACIA;
             if (tecla != 0) {
-                Mov movimiento = mapa.getMov(tecla);
-                int nuevoX = playerX;
-                int nuevoY = playerY;
+                movimiento = keyMap.getMov(tecla);
 
-                if (movimiento == Mov::UP) {
-                    nuevoY--;
-                }
-                else if (movimiento == Mov::DOWN) {
-                    nuevoY++;
-                }
-                else if (movimiento == Mov::LEFT) {
-                    nuevoX--;
-                }
-                else if (movimiento == Mov::RIGHT) {
-                    nuevoX++;
-                }
-                else if (movimiento == Mov::PAUSE) {
-                    pause = true;
-                    terminal.clearTerminal();
-                    Pantallas::pause();
-                    
-                    while (pause) {
-                        terminal.pollInputs();
-                        int teclaPause = terminal.obtenerSiguiente();
-
-                        if (teclaPause != 0) {
-                            Mov movPause = mapa.getMov(teclaPause);
-                            if (movPause == Mov::YES) {
-                                pause = false;
-                                terminal.clearTerminal();
-                                terminal.gotoxy(0, 0);
-                                // Opcional: Redibujar mapa si lo requieres al salir de pausa
-                            }
-                            else if (movPause == Mov::EXIT) {
-                                pause = false;
-                                loop = false;
-                            }
-                        }
-                        std::this_thread::sleep_for(std::chrono::milliseconds(30));
-                    }
+                if (movimiento == Mov::PAUSE) {
+                    game.pausar();
+                    estadoActual = GameState::PAUSE;
+                    continue;
                 }
                 else if (movimiento == Mov::EXIT) {
-                    loop = false;
+                    ejecutandoJuego = false;
+                    continue;
                 }
+                // Reiniciar el nivel actual con la tecla R
+                else if (movimiento == Mov::RESTART) {
+                    cargarNivelActual();
 
-                // Lógica de movimiento y validación de colisiones con puros ifs
-                if (nuevoX >= 0 && nuevoX < MAP_WIDTH && nuevoY >= 0 && nuevoY < MAP_HEIGHT) {
-                    if (nivelActual.grid[nuevoY][nuevoX] != CellType::WALL) {
-                        // Limpiamos la posición vieja en la matriz lógica y en pantalla
-                        nivelActual.grid[playerY][playerX] = CellType::EMPTY;
-                        terminal.gotoxy(playerX, playerY);
-                        cout << CHAR_EMPTY;
-
-                        // Actualizamos las coordenadas del jugador
-                        playerX = nuevoX;
-                        playerY = nuevoY;
-
-                        // Colocamos al jugador en la nueva posición
-                        nivelActual.grid[playerY][playerX] = CellType::PLAYER;
-                        terminal.gotoxy(playerX, playerY);
-                        cout << ANSI_PLAYER << CHAR_PLAYER << ANSI_RESET;
+                    // Borrar las gemas que el jugador ya había agarrado en este nivel
+                    for (const auto& gema : gemasRecolectadasSession) {
+                        render->getEntitiesBuffer().setValue(gema.first, gema.second, CellType::EMPTY);
                     }
+                    continue;
                 }
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+
+            // 1. Motor de física
+            ResultadoTick resultado = fisica->actualizar(movimiento);
+
+            // 2. Puntos por gemas (se recuerda su posición para que no reaparezcan al reiniciar)
+            if (resultado.puntosGanados > 0) {
+                game.addScore(resultado.puntosGanados);
+                gemasRecolectadasSession.push_back({ fisica->getFilaJugador(), fisica->getColJugador() });
+            }
+
+            // 3. Daño recibido
+            if (resultado.dano > 0) {
+                game.perderVida(resultado.dano);
+            }
+
+            // 4. Derrota
+            if (game.perder() || game.getVide() <= 0) {
+                estadoActual = GameState::GAMEOVER;
+                continue;
+            }
+
+            // 5. Nivel completado
+            if (resultado.nivelGanado) {
+                if (numeroNivel < TOTAL_NIVELES) {
+                    numeroNivel++;
+                    gemasRecolectadasSession.clear();   // las posiciones de las gemas son de otro nivel
+                    cargarNivelActual();                // el reloj sigue corriendo: 5 minutos para los tres niveles
+                }
+                else {
+                    game.addScore(game.timeLeft() * 5); // bono por el tiempo que sobró, solo al terminar todo
+                    estadoActual = GameState::VICTORY;
+                }
+                continue;
+            }
+
+            // 6. HUD
+            GameStats stats;
+            stats.lives = game.getVide();
+            stats.score = game.getScore();
+            stats.timeRemaining = game.timeLeft();
+            stats.currentLevel = numeroNivel;
+
+            HUD hud(render->getHUDBuffer());
+            hud.draw(stats);
+
+            // 7. Renderizado diferencial
+            render->combineBuffers();
+            render->renderDifferential();
+
+            // Ritmo del juego según los ticks por segundo de Fisica.h
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000 / ticksPorSegundo));
         }
-        catch (exception& e) {
-            cout << "Error: " << e.what() << endl;
+
+        // ==========================================
+        // ESTADO: PAUSA
+        // ==========================================
+        else if (estadoActual == GameState::PAUSE) {
+            terminal.clearTerminal();
+            Pantallas::pause();
+            cout << flush;
+
+            bool enPausa = true;
+            while (enPausa && ejecutandoJuego) {
+                terminal.pollInputs();
+                int tecla = terminal.obtenerSiguiente();
+                if (tecla != 0) {
+                    Mov mov = keyMap.getMov(tecla);
+                    if (mov == Mov::YES) {
+                        game.reanudar();
+                        render->forceFullRedraw();
+                        estadoActual = GameState::PLAYING;
+                        enPausa = false;
+                        terminal.clearTerminal();
+                    }
+                    else if (mov == Mov::EXIT) {
+                        estadoActual = GameState::MENU;
+                        enPausa = false;
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            }
+        }
+
+        // ==========================================
+        // ESTADO: VICTORIA (se completaron los 3 niveles)
+        // ==========================================
+        else if (estadoActual == GameState::VICTORY) {
+            terminal.clearTerminal();
+            Pantallas::victory();
+
+            int posicion = puntajes.agregar(game.getScore());
+            terminal.gotoxy(0, 7);
+            cout << "PUNTAJE FINAL: " << game.getScore() << endl;
+            if (posicion > 0) cout << "NUEVO RECORD! Posicion " << posicion << endl;
+            cout << endl;
+            puntajes.imprimir(posicion);
+            cout << flush;
+
+            bool enVictoria = true;
+            while (enVictoria && ejecutandoJuego) {
+                terminal.pollInputs();
+                int tecla = terminal.obtenerSiguiente();
+                if (tecla != 0) {
+                    Mov mov = keyMap.getMov(tecla);
+                    if (mov == Mov::YES || mov == Mov::EXIT) {
+                        estadoActual = GameState::MENU;
+                        enVictoria = false;
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            }
+        }
+
+        // ==========================================
+        // ESTADO: GAME OVER
+        // ==========================================
+        else if (estadoActual == GameState::GAMEOVER) {
+            terminal.clearTerminal();
+            Pantallas::gameOver();
+
+            int posicion = puntajes.agregar(game.getScore());
+            terminal.gotoxy(0, 7);
+            cout << "PUNTAJE OBTENIDO: " << game.getScore() << endl;
+            if (posicion > 0) cout << "NUEVO RECORD! Posicion " << posicion << endl;
+            cout << endl;
+            puntajes.imprimir(posicion);
+            cout << flush;
+
+            bool enGameOver = true;
+            while (enGameOver && ejecutandoJuego) {
+                terminal.pollInputs();
+                int tecla = terminal.obtenerSiguiente();
+                if (tecla != 0) {
+                    Mov mov = keyMap.getMov(tecla);
+                    if (mov == Mov::YES || mov == Mov::EXIT) {
+                        estadoActual = GameState::MENU;
+                        enGameOver = false;
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            }
         }
     }
+
+    // Limpieza de memoria dinámica al salir
+    if (render != nullptr) delete render;
+    if (fisica != nullptr) delete fisica;
 
     return 0;
 }

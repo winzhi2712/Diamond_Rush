@@ -1,24 +1,22 @@
 #pragma once
-//Contiene las estructuras pincipales del juego
-//Como las celdas del mapa, los estados y las acciones
 
-//Los tipos de elementos que pueden existir en la celda de las matrices
+// Contiene las estructuras principales del juego
 enum class CellType {
-    EMPTY = 0,  //Espacio vacio
-    WALL = 1,   //Muro estatico
-    DIAMOND = 2,   //Gema
-    ROCK = 3,   //Roca
-    PLAYER = 4  //Jugador
+    EMPTY,
+    WALL,
+    DIAMOND,
+    ROCK,
+    PLAYER,
+    EXIT,
+    DOOR,
+    BUTTON,
+    ENEMY,
+    ENEMY_H,    // Enemigo horizontal (movimiento de lado a lado)
+    ENEMY_V, // Enemigo vertical (movimiento de arriba a abajo)
+    BUSH   
 };
 
-//constantes para los caracteres
-const char CHAR_WALL = '#';
-const char CHAR_DIAMOND = '$';
-const char CHAR_BOULDER = 'O';
-const char CHAR_PLAYER = '&';
-const char CHAR_EMPTY = ' ';
-
-//Estados globales del juego
+// Estados globales del juego
 enum class GameState {
     MENU = 0,
     PLAYING = 1,
@@ -27,16 +25,16 @@ enum class GameState {
     GAMEOVER = 4
 };
 
-//estructura basica para las coordenadas
+// Estructura basica para las coordenadas
 struct Position {
-    int x;  //columna
-    int y;  //fila
+    int x = 0;  // columna
+    int y = 0;  // fila
 };
 
-//estrucutra para datos de HUD
+// Estructura para datos de HUD
 struct GameStats {
-    int lives;
-    int score;
-    int timeRemaining;
-    int currentLevel;
+    int lives = 0;
+    int score = 0;
+    int timeRemaining = 0;
+    int currentLevel = 1;
 };
