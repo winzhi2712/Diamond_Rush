@@ -10,7 +10,8 @@ enum class Mov {
 	PAUSE,
 	EXIT,
 	YES,
-	RESTART // Movimiento para reiniciar el nivel con la tecla R
+	RESTART, // Movimiento para reiniciar el nivel con la tecla R
+	LATIGO
 };
 
 class KeyMap {
@@ -41,6 +42,9 @@ public:
 		// NUEVO: Mapeo para reiniciar el nivel con la tecla R
 		mapa['r'] = Mov::RESTART;
 		mapa['R'] = Mov::RESTART;
+		mapa['e'] = Mov::LATIGO;
+		mapa['E'] = Mov::LATIGO; //para ponerlo, pon en el ciclo principal mov == Mov::LATIGO en el main del cpp
+
 	}
 
 	Mov getMov(int codigoTecla) { // Convertir el código de la tecla a una acción del juego
