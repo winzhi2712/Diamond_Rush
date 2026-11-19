@@ -101,7 +101,7 @@ int main() {
 
     Benchmark benchmark;
     int frameActual = 0;
-    const bool MODO_BENCHMARK = true; //Poner en true para activar el modo benchmark
+    const bool MODO_BENCHMARK = false; //Poner en true para activar el modo benchmark
     const int FRAMES_BENCHAMRK = 500;
 
     if (MODO_BENCHMARK) {
