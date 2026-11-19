@@ -4,6 +4,7 @@
 #include "Matrix.h"
 #include "Constantes.h"
 #include "Tipos.h"
+#include "Fisica.h"
 
 using std::string;
 using std::cout;
@@ -25,6 +26,34 @@ private:
     Matrix<RenderCell> previousFrame;
     Matrix<string> wallGlyphBuffer;
     bool jugadorHerido = false;   // true = la carita se pinta roja
+
+    bool panelPendiente = true;   // true = hay que dibujar el panel de controles en el siguiente frame
+
+    // Escribe una línea del panel a la derecha del mapa (fila 1 = primera fila de la pantalla de juego)
+    string lineaPanel(int fila, const string& texto) {
+        return "\033[" + to_string(fila + MARGEN_SUP) + ";" + to_string(MARGEN_IZQ + MAP_WIDTH + 4) + "H" + texto;
+    }
+
+    // Panel lateral con los controles y el valor de las gemas
+    string panelTexto() {
+        const string titulo = "\033[1m\033[96m";
+        const string tecla = "\033[93m";
+        string out = "";
+        int f = 1;
+
+        out += lineaPanel(f++, titulo + "CONTROLES" + ANSI_RESET);
+        out += lineaPanel(f++, tecla + "WASD / Flechas" + ANSI_RESET + "  Mover");
+        out += lineaPanel(f++, tecla + "E" + ANSI_RESET + "               Latigo");
+        out += lineaPanel(f++, tecla + "P" + ANSI_RESET + "               Pausa");
+        out += lineaPanel(f++, tecla + "R" + ANSI_RESET + "               Reiniciar nivel");
+        out += lineaPanel(f++, tecla + "ESC" + ANSI_RESET + "             Salir");
+        f++;
+
+        out += lineaPanel(f++, titulo + "PUNTOS" + ANSI_RESET);
+        out += lineaPanel(f++, "\033[95m" + CHAR_DIAMOND + ANSI_RESET + " = " + to_string(puntosGema) + " puntos");
+        out += lineaPanel(f++, "Tiempo sobrante = 5 pts/seg");
+        return out;
+    }
 
     string getCharacter(CellType type) {
         switch (type) {
@@ -123,6 +152,7 @@ public:
     // Obliga a redibujar todo en el siguiente frame (por ejemplo, al volver de la pausa)
     void forceFullRedraw() {
         previousFrame.setAll({ "\x01", "" });   // valor imposible: todo se considera distinto
+        panelPendiente = true;                  // y se vuelve a dibujar el panel
     }
 
     void combineBuffers() {
@@ -167,6 +197,10 @@ public:
 
     void renderDifferential() {
         string output = "";
+        if (panelPendiente) {
+            output += panelTexto();
+            panelPendiente = false;
+        }
         for (int r = 0; r < finalBuffer.getRows(); r++) {
             for (int c = 0; c < finalBuffer.getColumns(); c++) {
                 RenderCell current = finalBuffer.getValue(r, c);
