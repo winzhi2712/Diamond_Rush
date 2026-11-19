@@ -142,6 +142,7 @@
     <ClCompile Include="DiamondRush.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Benchmark.h" />
     <ClInclude Include="Constantes.h" />
     <ClInclude Include="Fisica.h" />
     <ClInclude Include="Game.h" />

@@ -16,6 +16,7 @@
 #include "Fisica.h"
 #include "HUD.h"
 #include "Puntajes.h"
+#include "Benchmark.h"
 
 using namespace std;
 using namespace std::chrono;
@@ -98,6 +99,25 @@ int main() {
         fisica = nullptr;
         };
 
+    Benchmark benchmark;
+    int frameActual = 0;
+    const bool MODO_BENCHMARK = true; //Poner en true para activar el modo benchmark
+    const int FRAMES_BENCHAMRK = 500;
+
+    if (MODO_BENCHMARK) {
+        benchmark.startBench(false);
+        game.reset();
+        liberarNiveles();
+        construirNivel(1);
+        cambiarANivel(1);
+        estadoActual = GameState::PLAYING;
+    }
+    auto medirT = [](auto&& fn) {
+        auto start = std::chrono::steady_clock::now();
+        fn();
+        auto end = std::chrono::steady_clock::now();
+        return std::chrono::duration<double, std::micro>(end - start).count();
+    };
     while (ejecutandoJuego) {
 
         // ==========================================
@@ -138,47 +158,69 @@ int main() {
         // ESTADO: JUGANDO
         // ==========================================
         else if (estadoActual == GameState::PLAYING) {
-            terminal.pollInputs();
-            int tecla = terminal.obtenerSiguiente();
-            terminal.limpiarBuffer();   // evita que se acumulen teclas y el personaje siga moviéndose
-
+            benchmark.startFrame(frameActual);
             Mov movimiento = Mov::VACIA;
-            if (tecla != 0) {
-                // Atajo de desarrollo: las teclas 1, 2 y 3 saltan directo a ese nivel
-                if (MODO_DEV && tecla >= '1' && tecla <= '0' + TOTAL_NIVELES) {
-                    int destino = tecla - '0';
-                    if (fisicas[destino] == nullptr) construirNivel(destino);
-                    cambiarANivel(destino);
-                    continue;
+            double tInput = medirT([&]() {
+                if (benchmark.estaSilencio()) {
+                    static const Mov secuencia[] = {
+                        Mov::RIGHT, Mov::VACIA, Mov::DOWN, Mov::VACIA, Mov::LEFT, Mov::VACIA
+                    };
+                    movimiento = secuencia[frameActual % 6];
                 }
-                movimiento = keyMap.getMov(tecla);
+                else {
+                    terminal.pollInputs();
+                    int tecla = terminal.obtenerSiguiente();
+                    terminal.limpiarBuffer();   // evita que se acumulen teclas y el personaje siga moviéndose
 
-                if (movimiento == Mov::PAUSE) {
-                    game.pausar();
-                    estadoActual = GameState::PAUSE;
-                    continue;
-                }
-                else if (movimiento == Mov::EXIT) {
-                    ejecutandoJuego = false;
-                    continue;
-                }
-                // Reiniciar el nivel actual con la tecla R
-                else if (movimiento == Mov::RESTART) {
-                    vector<pair<int, int>> gemas = gemasPorNivel[numeroNivel];   // copia, porque construirNivel limpia la lista
-                    construirNivel(numeroNivel);
-                    gemasPorNivel[numeroNivel] = gemas;
+                    if (tecla != 0) {
+                        // Atajo de desarrollo: las teclas 1, 2 y 3 saltan directo a ese nivel
+                        if (MODO_DEV && tecla >= '1' && tecla <= '0' + TOTAL_NIVELES) {
+                            int destino = tecla - '0';
+                            if (fisicas[destino] == nullptr) construirNivel(destino);
+                            cambiarANivel(destino);
+                            return;
+                        }
+                        movimiento = keyMap.getMov(tecla);
 
-                    // Borrar las gemas que el jugador ya había agarrado en este nivel
-                    for (const auto& gema : gemas) {
-                        renders[numeroNivel]->getEntitiesBuffer().setValue(gema.first, gema.second, CellType::EMPTY);
+                        if (movimiento == Mov::PAUSE) {
+                            game.pausar();
+                            estadoActual = GameState::PAUSE;
+                            movimiento = Mov::VACIA;
+                            return;
+                        }
+                        else if (movimiento == Mov::EXIT) {
+                            ejecutandoJuego = false;
+                            movimiento = Mov::VACIA;
+                            return;
+                        }
+                        // Reiniciar el nivel actual con la tecla R
+                        else if (movimiento == Mov::RESTART) {
+                            vector<pair<int, int>> gemas = gemasPorNivel[numeroNivel];   // copia, porque construirNivel limpia la lista
+                            construirNivel(numeroNivel);
+                            gemasPorNivel[numeroNivel] = gemas;
+
+                            // Borrar las gemas que el jugador ya había agarrado en este nivel
+                            for (const auto& gema : gemas) {
+                                renders[numeroNivel]->getEntitiesBuffer().setValue(gema.first, gema.second, CellType::EMPTY);
+                            }
+                            cambiarANivel(numeroNivel);
+                            movimiento = Mov::VACIA;
+                            return;
+                        }
                     }
-                    cambiarANivel(numeroNivel);
-                    continue;
                 }
+            });
+            benchmark.registerInput(tInput);
+            if (!ejecutandoJuego || estadoActual != GameState::PLAYING) {
+                benchmark.endFrame();
+                continue;
             }
-
             // 1. Motor de física
-            ResultadoTick resultado = fisica->actualizar(movimiento);
+            ResultadoTick resultado;
+            double tFisica = medirT([&]() {
+                resultado = fisica->actualizar(movimiento);
+                });
+            benchmark.registerFisica(tFisica);
 
             // 2. Puntos por gemas (se recuerda su posición para que no reaparezcan al reiniciar)
             if (resultado.puntosGanados > 0) {
@@ -226,14 +268,31 @@ int main() {
             stats.currentLevel = numeroNivel;
 
             HUD hud(render->getHUDBuffer());
-            hud.draw(stats);
+            double tHud = medirT([&]() {
+                hud.draw(stats);
+                });
+            benchmark.registerHud(tHud);
 
             // 7. Renderizado diferencial
-            render->combineBuffers();
-            render->renderDifferential();
+            double tRender = medirT([&]() {
+                render->combineBuffers();
+                if (!benchmark.estaSilencio()) {
+                    render->renderDifferential();
+                }
+                });
+            benchmark.registerRender(tRender);
+            benchmark.endFrame();
+            frameActual++;
 
-            // Ritmo del juego según los ticks por segundo de Fisica.h
-            std::this_thread::sleep_for(std::chrono::milliseconds(1000 / ticksPorSegundo));
+            if (benchmark.estaOn() && frameActual >= FRAMES_BENCHAMRK) {
+                benchmark.stopBench();
+                ejecutandoJuego = false;
+                continue;
+            }
+            if (!benchmark.estaSilencio()) {
+                // Ritmo del juego según los ticks por segundo de Fisica.h
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000 / ticksPorSegundo));
+            }
         }
 
         // ==========================================
@@ -327,6 +386,9 @@ int main() {
         }
     }
 
+    if (MODO_BENCHMARK) {
+        benchmark.exportCVS("benchmark.csv");
+    }
     // Limpieza de memoria dinámica al salir
     liberarNiveles();
 
