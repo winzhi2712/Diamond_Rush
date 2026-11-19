@@ -142,11 +142,16 @@
     <ClCompile Include="DiamondRush.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Benchmark.h" />
     <ClInclude Include="Constantes.h" />
+    <ClInclude Include="Fisica.h" />
     <ClInclude Include="Game.h" />
     <ClInclude Include="HUD.h" />
+    <ClInclude Include="KeyMap.h" />
+    <ClInclude Include="MapLoader.h" />
     <ClInclude Include="Matrix.h" />
     <ClInclude Include="Pantallas.h" />
+    <ClInclude Include="Puntajes.h" />
     <ClInclude Include="Render.h" />
     <ClInclude Include="Terminal.h" />
     <ClInclude Include="Tipos.h" />
