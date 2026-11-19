@@ -3,8 +3,8 @@
 #include <string>
 #include <iomanip>
 #include <sstream>
-//Contiene la logica principal del juego
-//Gestiona el estado, funcionamiento y flujo de ejecucion
+// Contiene la logica principal del juego
+// Gestiona el estado, funcionamiento y flujo de ejecucion
 
 class Game {
 private:
@@ -12,6 +12,7 @@ private:
 	int score;
 
 	std::chrono::steady_clock::time_point start;
+	std::chrono::steady_clock::time_point pausaInicio;
 	const int LIMITE_TIEMPO = 300;
 
 public:
@@ -19,9 +20,24 @@ public:
 		reset();
 	}
 	void reset() {
-		vida = 100; //esto es temporal, ya despues lo cambiamos por la vida que quieran poner
+		vida = 100; // esto es temporal, ya despues lo cambiamos por la vida que quieran poner
 		score = 0;
 		start = std::chrono::steady_clock::now();
+		pausaInicio = start;
+	}
+
+	// Reinicia solo el reloj (para empezar un nivel nuevo sin perder puntaje ni vida)
+	void reiniciarTiempo() {
+		start = std::chrono::steady_clock::now();
+		pausaInicio = start;
+	}
+
+	// El reloj no avanza mientras el juego esta en pausa
+	void pausar() {
+		pausaInicio = std::chrono::steady_clock::now();
+	}
+	void reanudar() {
+		start += std::chrono::steady_clock::now() - pausaInicio;
 	}
 
 	void addScore(int puntos) {
@@ -42,7 +58,7 @@ public:
 		int restante = LIMITE_TIEMPO - static_cast<int>(transcurrido);
 		return (restante > 0) ? restante : 0;
 	}
-	string formatTime() {
+	std::string formatTime() {
 		int totalSegundos = timeLeft();
 		int min = totalSegundos / 60;
 		int segundos = totalSegundos % 60;
@@ -55,4 +71,3 @@ public:
 		return timeLeft() <= 0 || vida < 0;
 	}
 };
-

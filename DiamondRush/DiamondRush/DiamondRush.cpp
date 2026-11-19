@@ -1,164 +1,396 @@
 #include <iostream>
 #include <string>
 #include <chrono>
-#include <conio.h>
 #include <thread>
-#include <windows.h>
+#include <vector>
+#include <utility>
+#include "Constantes.h"
+#include "Tipos.h"
+#include "MapLoader.h"
 #include "Matrix.h"
 #include "Terminal.h"
+#include "Render.h"
 #include "Pantallas.h"
 #include "KeyMap.h"
 #include "Game.h"
+#include "Fisica.h"
+#include "HUD.h"
+#include "Puntajes.h"
+#include "Benchmark.h"
+
 using namespace std;
 using namespace std::chrono;
 
-//inputs
-int inputs() {
-    if (_kbhit()) {
-        int tecla = _getch();
-        if (tecla == 224 || tecla == 0) {
-            tecla = _getch() + 256;
-        }
-        return tecla;
-    }
-    return 0;
-}
+const int TOTAL_NIVELES = 3;
+const bool MODO_DEV = true;   // true = teclas 1, 2 y 3 saltan de nivel; PONERLO en false antes de entregar
 
-
-//funciones para impresion
-void gotoxy(int x, int y) {
-    COORD coord;
-    coord.X = x;
-    coord.Y = y;
-    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), coord);
-}
-
-void ocultarCursor() {
-    HANDLE hConsole = GetStdHandle(STD_OUTPUT_HANDLE);
-    CONSOLE_CURSOR_INFO cursorInfo;
-    GetConsoleCursorInfo(hConsole, &cursorInfo);
-    cursorInfo.bVisible = FALSE;
-    SetConsoleCursorInfo(hConsole, &cursorInfo);
-}
-
-
-//main loop
-int main() {   
-    SetConsoleOutputCP(65001);
-    string title1 = "████  ███  ███  █   █  ███  █   █ ████     ████  █   █  ████ █   █ ";
-    string title2 = "█   █  █  █   █ ██ ██ █   █ ██  █ █   █    █   █ █   █ █     █   █ ";
-    string title3 = "█   █  █  █████ █ █ █ █   █ █ █ █ █   █    ████  █   █  ███  █████ ";
-    string title4 = "█   █  █  █   █ █   █ █   █ █  ██ █   █    █  █  █   █     █ █   █ ";
-    string title5 = "████  ███ █   █ █   █  ███  █   █ ████     █   █  ███  ████  █   █ ";
+int main() {
+#ifdef _WIN32
+    SetConsoleOutputCP(65001); // Configurar consola en UTF-8 para Windows
+#endif
 
     Terminal terminal;
     terminal.init();
     Game game;
-    KeyMap mapa;
+    KeyMap keyMap;
+    Puntajes puntajes;   // Top 5 de puntajes, guardado en puntajes.txt
 
-    bool menu = true;
-    bool pause = false;
-    ocultarCursor();
-
-    while (menu) {
-        terminal.clearTerminal();
-        Pantallas::mainTitle();
-        terminal.pollInputs();
-        int opcion = terminal.obtenerSiguiente();
-        if (opcion != 0) {
-            Mov movMenu = mapa.getMov(opcion);
-            if (movMenu == Mov::YES)
-                menu = !menu;
-            else if (movMenu == Mov::EXIT)
-                return 0;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    if (!terminal.checkMinSize()) {
+        cout << "Advertencia: La terminal es muy pequeña. Se recomienda al menos "
+            << MIN_TERMINAL_WIDTH << "x" << MIN_TERMINAL_HEIGHT << "." << endl;
     }
 
+    GameState estadoActual = GameState::MENU;
 
-    Matrix<string> test(10, 10);
-    test.setValue(0, 0, "*");
-    bool loop = true;
+    // Cada nivel conserva su propio estado para poder ir y volver entre mapas
+    Render* renders[TOTAL_NIVELES + 1] = { nullptr };
+    Fisica* fisicas[TOTAL_NIVELES + 1] = { nullptr };
+    vector<pair<int, int>> gemasPorNivel[TOTAL_NIVELES + 1];   // gemas ya recolectadas en cada nivel
+    Render* render = nullptr;   // nivel que se está jugando ahora
+    Fisica* fisica = nullptr;
 
-    terminal.clearTerminal();
-    terminal.gotoxy(0, 0);
-    test.print();
+    bool ejecutandoJuego = true;
+    int numeroNivel = 1;
 
+    // Construye (o reconstruye desde cero) el nivel n leyendo nivelN.txt
+    auto construirNivel = [&](int n) {
+        GameMap datos = MapLoader::cargarNivel("nivel" + to_string(n) + ".txt");
 
-    while (loop == true) {
-        if (game.perder()) {
-            loop = false;
-            break; ///////BREAK TEMPORAL, ODIO LOS BREAKS
+        if (fisicas[n] != nullptr) { delete fisicas[n]; fisicas[n] = nullptr; }
+        if (renders[n] != nullptr) { delete renders[n]; renders[n] = nullptr; }
+
+        renders[n] = new Render(MAP_HEIGHT, MAP_WIDTH);
+        for (int r = 0; r < MAP_HEIGHT; r++) {
+            for (int c = 0; c < MAP_WIDTH; c++) {
+                renders[n]->getMapBuffer().setValue(r, c, datos.grid[r][c]);
+                renders[n]->getEntitiesBuffer().setValue(r, c, datos.entities[r][c]);
+                renders[n]->getWallGlyphBuffer().setValue(r, c, datos.glyphs[r][c]);
+            }
         }
-        terminal.gotoxy(0, 11);
-        cout << "TIEMPO: " << game.formatTime();
-        try {
-            terminal.pollInputs();
-            int tecla = terminal.obtenerSiguiente();
 
-            if (tecla != 0) {
-                Mov movimiento = mapa.getMov(tecla);
-                if (movimiento == Mov::UP) {
-                    test.setValue(test.currentRow, test.currentCol, "");
-                    test.setValue(test.currentRow - 1, test.currentCol, "*");
-                    test.setCurrent(test.currentRow - 1, test.currentCol);
-                }
+        fisicas[n] = new Fisica(renders[n]->getMapBuffer(), renders[n]->getEntitiesBuffer());
+        // colocarJugador recibe (fila, columna)
+        fisicas[n]->colocarJugador(datos.playerY, datos.playerX);
 
-                else if (movimiento == Mov::DOWN) {
-                    test.setValue(test.currentRow, test.currentCol, "");
-                    test.setValue(test.currentRow + 1, test.currentCol, "*");
-                    test.setCurrent(test.currentRow + 1, test.currentCol);
-                }
+        for (const auto& ene : datos.enemigos) {
+            fisicas[n]->agregarEnemigo(ene.fila, ene.col, ene.dirFila, ene.dirCol, ene.ticks, ene.persigue, ene.tipoCelda);
+        }
 
+        gemasPorNivel[n].clear();
+        };
 
-                else if (movimiento == Mov::LEFT) {
-                    test.setValue(test.currentRow, test.currentCol, "");
-                    test.setValue(test.currentRow, test.currentCol - 1, "*");
-                    test.setCurrent(test.currentRow, test.currentCol - 1);
-                }
+    // Cambia el nivel que se está jugando (el nivel ya debe estar construido)
+    auto cambiarANivel = [&](int n) {
+        numeroNivel = n;
+        render = renders[n];
+        fisica = fisicas[n];
+        terminal.clearTerminal();
+        render->forceFullRedraw();
+        };
 
+    // Libera todos los niveles (al empezar una partida nueva o al salir)
+    auto liberarNiveles = [&]() {
+        for (int i = 1; i <= TOTAL_NIVELES; i++) {
+            if (fisicas[i] != nullptr) { delete fisicas[i]; fisicas[i] = nullptr; }
+            if (renders[i] != nullptr) { delete renders[i]; renders[i] = nullptr; }
+            gemasPorNivel[i].clear();
+        }
+        render = nullptr;
+        fisica = nullptr;
+        };
 
-                else if (movimiento == Mov::RIGHT) {
-                    test.setValue(test.currentRow, test.currentCol, "");
-                    test.setValue(test.currentRow, test.currentCol + 1, "*");
-                    test.setCurrent(test.currentRow, test.currentCol + 1);
-                }
-                else if (movimiento == Mov::PAUSE) {
-                    pause = !pause;
-                    terminal.clearTerminal();
-                    Pantallas::pause();
-                    while (pause) {
-                        terminal.pollInputs();
-                        int teclaPause = terminal.obtenerSiguiente();
+    Benchmark benchmark;
+    int frameActual = 0;
+    const bool MODO_BENCHMARK = false; //Poner en true para activar el modo benchmark
+    const int FRAMES_BENCHAMRK = 500;
 
-                        if (teclaPause != 0) {
+    if (MODO_BENCHMARK) {
+        benchmark.startBench(false);
+        game.reset();
+        liberarNiveles();
+        construirNivel(1);
+        cambiarANivel(1);
+        estadoActual = GameState::PLAYING;
+    }
+    auto medirT = [](auto&& fn) {
+        auto start = std::chrono::steady_clock::now();
+        fn();
+        auto end = std::chrono::steady_clock::now();
+        return std::chrono::duration<double, std::micro>(end - start).count();
+    };
+    while (ejecutandoJuego) {
 
-                            Mov movPause = mapa.getMov(teclaPause);
-                            if (movPause == Mov::YES) {
-                                pause = !pause;
-                                terminal.clearTerminal();
-                                terminal.gotoxy(0, 0);
-                                test.print();
-                            }
-                            else if (movPause == Mov::EXIT) {
-                                pause = !pause;
-                                loop = !loop;
-                            }
-                        }
-                        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        // ==========================================
+        // ESTADO: MENÚ PRINCIPAL
+        // ==========================================
+        if (estadoActual == GameState::MENU) {
+            terminal.clearTerminal();
+            Pantallas::mainTitle();
+            cout << "\n\n";
+            puntajes.imprimir();
+            cout << flush;
+
+            bool enMenu = true;
+            while (enMenu && ejecutandoJuego) {
+                terminal.pollInputs();
+                int tecla = terminal.obtenerSiguiente();
+                if (tecla != 0) {
+                    Mov mov = keyMap.getMov(tecla);
+                    if (mov == Mov::YES) {
+                        game.reset();
+                        liberarNiveles();
+                        construirNivel(1);
+                        cambiarANivel(1);
+
+                        estadoActual = GameState::PLAYING;
+                        enMenu = false;
+                    }
+                    else if (mov == Mov::EXIT) {
+                        ejecutandoJuego = false;
+                        enMenu = false;
                     }
                 }
-
-                else if (movimiento == Mov::EXIT) {
-                    loop = false;
-                }
-                terminal.gotoxy(0, 0);
-                test.print();
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(30));
         }
-        catch (exception& e) {
-            cout << "Error: " << e.what() << endl;
+
+        // ==========================================
+        // ESTADO: JUGANDO
+        // ==========================================
+        else if (estadoActual == GameState::PLAYING) {
+            benchmark.startFrame(frameActual);
+            Mov movimiento = Mov::VACIA;
+            double tInput = medirT([&]() {
+                if (benchmark.estaSilencio()) {
+                    static const Mov secuencia[] = {
+                        Mov::RIGHT, Mov::VACIA, Mov::DOWN, Mov::VACIA, Mov::LEFT, Mov::VACIA
+                    };
+                    movimiento = secuencia[frameActual % 6];
+                }
+                else {
+                    terminal.pollInputs();
+                    int tecla = terminal.obtenerSiguiente();
+                    terminal.limpiarBuffer();   // evita que se acumulen teclas y el personaje siga moviéndose
+
+                    if (tecla != 0) {
+                        // Atajo de desarrollo: las teclas 1, 2 y 3 saltan directo a ese nivel
+                        if (MODO_DEV && tecla >= '1' && tecla <= '0' + TOTAL_NIVELES) {
+                            int destino = tecla - '0';
+                            if (fisicas[destino] == nullptr) construirNivel(destino);
+                            cambiarANivel(destino);
+                            return;
+                        }
+                        movimiento = keyMap.getMov(tecla);
+
+                        if (movimiento == Mov::PAUSE) {
+                            game.pausar();
+                            estadoActual = GameState::PAUSE;
+                            movimiento = Mov::VACIA;
+                            return;
+                        }
+                        else if (movimiento == Mov::EXIT) {
+                            ejecutandoJuego = false;
+                            movimiento = Mov::VACIA;
+                            return;
+                        }
+                        // Reiniciar el nivel actual con la tecla R
+                        else if (movimiento == Mov::RESTART) {
+                            vector<pair<int, int>> gemas = gemasPorNivel[numeroNivel];   // copia, porque construirNivel limpia la lista
+                            construirNivel(numeroNivel);
+                            gemasPorNivel[numeroNivel] = gemas;
+
+                            // Borrar las gemas que el jugador ya había agarrado en este nivel
+                            for (const auto& gema : gemas) {
+                                renders[numeroNivel]->getEntitiesBuffer().setValue(gema.first, gema.second, CellType::EMPTY);
+                            }
+                            cambiarANivel(numeroNivel);
+                            movimiento = Mov::VACIA;
+                            return;
+                        }
+                    }
+                }
+            });
+            benchmark.registerInput(tInput);
+            if (!ejecutandoJuego || estadoActual != GameState::PLAYING) {
+                benchmark.endFrame();
+                continue;
+            }
+            // 1. Motor de física
+            ResultadoTick resultado;
+            double tFisica = medirT([&]() {
+                resultado = fisica->actualizar(movimiento);
+                });
+            benchmark.registerFisica(tFisica);
+
+            // 2. Puntos por gemas (se recuerda su posición para que no reaparezcan al reiniciar)
+            if (resultado.puntosGanados > 0) {
+                game.addScore(resultado.puntosGanados);
+                gemasPorNivel[numeroNivel].push_back({ fisica->getFilaJugador(), fisica->getColJugador() });
+            }
+
+            // 3. Daño recibido
+            if (resultado.dano > 0) {
+                game.perderVida(resultado.dano);
+            }
+
+            // 4. Derrota
+            if (game.perder() || game.getVide() <= 0) {
+                estadoActual = GameState::GAMEOVER;
+                continue;
+            }
+
+            // 5. Cambio de nivel (ir adelante o regresar al mapa anterior)
+            if (resultado.nivelGanado) {
+                if (numeroNivel < TOTAL_NIVELES) {
+                    int siguiente = numeroNivel + 1;
+                    if (fisicas[siguiente] == nullptr) construirNivel(siguiente);
+                    cambiarANivel(siguiente);   // el reloj sigue corriendo: 5 minutos para los tres niveles
+                }
+                else {
+                    game.addScore(game.timeLeft() * 5); // bono por el tiempo que sobró, solo al terminar todo
+                    estadoActual = GameState::VICTORY;
+                }
+                continue;
+            }
+            if (resultado.volverAtras && numeroNivel > 1) {
+                cambiarANivel(numeroNivel - 1);
+                continue;
+            }
+
+            // La carita se pone roja mientras dura la invulnerabilidad tras recibir daño
+            render->setJugadorHerido(fisica->getInvulnerableTicks() > 0);
+
+            // 6. HUD
+            GameStats stats;
+            stats.lives = game.getVide();
+            stats.score = game.getScore();
+            stats.timeRemaining = game.timeLeft();
+            stats.currentLevel = numeroNivel;
+
+            HUD hud(render->getHUDBuffer());
+            double tHud = medirT([&]() {
+                hud.draw(stats);
+                });
+            benchmark.registerHud(tHud);
+
+            // 7. Renderizado diferencial
+            double tRender = medirT([&]() {
+                render->combineBuffers();
+                if (!benchmark.estaSilencio()) {
+                    render->renderDifferential();
+                }
+                });
+            benchmark.registerRender(tRender);
+            benchmark.endFrame();
+            frameActual++;
+
+            if (benchmark.estaOn() && frameActual >= FRAMES_BENCHAMRK) {
+                benchmark.stopBench();
+                ejecutandoJuego = false;
+                continue;
+            }
+            if (!benchmark.estaSilencio()) {
+                // Ritmo del juego según los ticks por segundo de Fisica.h
+                std::this_thread::sleep_for(std::chrono::milliseconds(1000 / ticksPorSegundo));
+            }
+        }
+
+        // ==========================================
+        // ESTADO: PAUSA
+        // ==========================================
+        else if (estadoActual == GameState::PAUSE) {
+            terminal.clearTerminal();
+            Pantallas::pause();
+            cout << flush;
+
+            bool enPausa = true;
+            while (enPausa && ejecutandoJuego) {
+                terminal.pollInputs();
+                int tecla = terminal.obtenerSiguiente();
+                if (tecla != 0) {
+                    Mov mov = keyMap.getMov(tecla);
+                    if (mov == Mov::YES) {
+                        game.reanudar();
+                        render->forceFullRedraw();
+                        estadoActual = GameState::PLAYING;
+                        enPausa = false;
+                        terminal.clearTerminal();
+                    }
+                    else if (mov == Mov::EXIT) {
+                        estadoActual = GameState::MENU;
+                        enPausa = false;
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            }
+        }
+
+        // ==========================================
+        // ESTADO: VICTORIA (se completaron los 3 niveles)
+        // ==========================================
+        else if (estadoActual == GameState::VICTORY) {
+            terminal.clearTerminal();
+            Pantallas::victory();
+
+            int posicion = puntajes.agregar(game.getScore());
+            terminal.gotoxy(MARGEN_IZQ, 7 + MARGEN_SUP);
+            cout << "PUNTAJE FINAL: " << game.getScore() << endl;
+            if (posicion > 0) cout << string(MARGEN_IZQ, ' ') << "NUEVO RECORD! Posicion " << posicion << endl;
+            cout << endl;
+            puntajes.imprimir(posicion);
+            cout << flush;
+
+            bool enVictoria = true;
+            while (enVictoria && ejecutandoJuego) {
+                terminal.pollInputs();
+                int tecla = terminal.obtenerSiguiente();
+                if (tecla != 0) {
+                    Mov mov = keyMap.getMov(tecla);
+                    if (mov == Mov::YES || mov == Mov::EXIT) {
+                        estadoActual = GameState::MENU;
+                        enVictoria = false;
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            }
+        }
+
+        // ==========================================
+        // ESTADO: GAME OVER
+        // ==========================================
+        else if (estadoActual == GameState::GAMEOVER) {
+            terminal.clearTerminal();
+            Pantallas::gameOver();
+
+            int posicion = puntajes.agregar(game.getScore());
+            terminal.gotoxy(MARGEN_IZQ, 7 + MARGEN_SUP);
+            cout << "PUNTAJE OBTENIDO: " << game.getScore() << endl;
+            if (posicion > 0) cout << string(MARGEN_IZQ, ' ') << "NUEVO RECORD! Posicion " << posicion << endl;
+            cout << endl;
+            puntajes.imprimir(posicion);
+            cout << flush;
+
+            bool enGameOver = true;
+            while (enGameOver && ejecutandoJuego) {
+                terminal.pollInputs();
+                int tecla = terminal.obtenerSiguiente();
+                if (tecla != 0) {
+                    Mov mov = keyMap.getMov(tecla);
+                    if (mov == Mov::YES || mov == Mov::EXIT) {
+                        estadoActual = GameState::MENU;
+                        enGameOver = false;
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            }
         }
     }
+
+    if (MODO_BENCHMARK) {
+        benchmark.exportCVS("benchmark.csv");
+    }
+    // Limpieza de memoria dinámica al salir
+    liberarNiveles();
+
+    return 0;
 }

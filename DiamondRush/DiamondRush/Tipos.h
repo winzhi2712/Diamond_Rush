@@ -1,39 +1,42 @@
 #pragma once
-//Contiene las estructuras pincipales del juego
-//Como las celdas del mapa, los estados y las acciones
+// Contiene las estructuras principales del juego
 
-//Los tipos de elementos que pueden existir en la celda de las matrices
 enum class CellType {
-    EMPTY = 0,  //Espacio vacio
-    WALL = 1,   //Muro estatico
-    DIAMOND = 2,   //Gema
-    ROCK = 3,   //Roca
-    PLAYER = 4  //Jugador
+    EMPTY = 0,  
+    WALL,       // Pared fija (╔ ═ ║ ╬ etc.), no se puede atravesar
+    DIAMOND,    // Diamante/gema : el jugador lo recoge y suma puntos
+    ROCK,       // Roca : cae por gravedad y se puede empujar
+    PLAYER,     // Jugador 
+    EXIT,       // Salida del nivel 
+
+    ENEMY,      // Enemigo genérico 
+    ENEMY_H,    // Enemigo que patrulla en horizontal 
+    ENEMY_V,    // Enemigo que patrulla en vertical 
+    BUTTON,     // Botón rojo (r u o en el .txt)
+    BUTTON_G,   // Botón verde (g)
+    BUTTON_B,   // Botón azul (b)
+
+    DOOR,       // Puerta roja (R o H en el .txt); la abre el botón rojo
+    DOOR_G,     // Puerta verde (G); la abre el botón verde
+    DOOR_B,     // Puerta azul (B); la abre el botón azul
+    BUSH,       // Arbusto destructible 
+    WHIP_H,     // Látigo horizontal (─), efecto visual al presionar E
+    WHIP_V      // Látigo vertical (│), efecto visual al presionar E
 };
 
-//constantes para los caracteres
-const char CHAR_WALL = '#';
-const char CHAR_DIAMOND = '$';
-const char CHAR_BOULDER = 'O';
-const char CHAR_PLAYER = '&';
-const char CHAR_EMPTY = ' ';
-
-//Estados globales del juego
 enum class GameState {
     MENU = 0,
-    PLAYING = 1,
-    PAUSE = 2,
-    VICTORY = 3,
-    GAMEOVER = 4
+    PLAYING,
+    PAUSE,
+    VICTORY,
+    GAMEOVER
 };
 
-//estructura basica para las coordenadas
 struct Position {
-    int x;  //columna
-    int y;  //fila
+    int x;  // columna
+    int y;  // fila
 };
 
-//estrucutra para datos de HUD
 struct GameStats {
     int lives;
     int score;
