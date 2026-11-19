@@ -11,7 +11,7 @@ struct EnemigoInfo {
     int col = 0;
     int dirFila = 0;
     int dirCol = 1;
-    int ticks = 6;         // Velocidad fluida
+    int ticks = 4;         // Velocidad fluida
     bool persigue = false;
     CellType tipoCelda = CellType::ENEMY_H;
 };
@@ -90,16 +90,28 @@ public:
                     mapaJuego.entities[fila][col] = CellType::ROCK;
                 }
                 // 6. Arbustos destructibles (capa fija)
-                else if (simbolo == "▒" || simbolo == "░" || simbolo == "B" || simbolo == "❀") {
+                else if (simbolo == "▒" || simbolo == "░" || simbolo == "❀") {
                     mapaJuego.grid[fila][col] = CellType::BUSH;
                 }
-                // 7. Botón (capa fija)
-                else if (simbolo == "o") {
+                // 7. Botones (capa fija): r = rojo, g = verde, b = azul ('o' también es rojo)
+                else if (simbolo == "r" || simbolo == "o") {
                     mapaJuego.grid[fila][col] = CellType::BUTTON;
                 }
-                // 8. Puerta (capa fija)
-                else if (simbolo == "H") {
+                else if (simbolo == "g") {
+                    mapaJuego.grid[fila][col] = CellType::BUTTON_G;
+                }
+                else if (simbolo == "b") {
+                    mapaJuego.grid[fila][col] = CellType::BUTTON_B;
+                }
+                // 8. Puertas (capa fija): R = rojo, G = verde, B = azul ('H' también es roja)
+                else if (simbolo == "R" || simbolo == "H") {
                     mapaJuego.grid[fila][col] = CellType::DOOR;
+                }
+                else if (simbolo == "G") {
+                    mapaJuego.grid[fila][col] = CellType::DOOR_G;
+                }
+                else if (simbolo == "B") {
+                    mapaJuego.grid[fila][col] = CellType::DOOR_B;
                 }
                 // 9. Enemigo horizontal
                 else if (simbolo == "ʃ") {
@@ -108,7 +120,7 @@ public:
                     ene.col = col;
                     ene.dirFila = 0;
                     ene.dirCol = 1;
-                    ene.ticks = 6;
+                    ene.ticks = 4;
                     ene.persigue = false;
                     ene.tipoCelda = CellType::ENEMY_H;
                     mapaJuego.enemigos.push_back(ene);
@@ -120,7 +132,7 @@ public:
                     ene.col = col;
                     ene.dirFila = 1;
                     ene.dirCol = 0;
-                    ene.ticks = 6;
+                    ene.ticks = 4;
                     ene.persigue = false;
                     ene.tipoCelda = CellType::ENEMY_V;
                     mapaJuego.enemigos.push_back(ene);

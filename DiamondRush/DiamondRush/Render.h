@@ -24,6 +24,7 @@ private:
     Matrix<RenderCell> finalBuffer;
     Matrix<RenderCell> previousFrame;
     Matrix<string> wallGlyphBuffer;
+    bool jugadorHerido = false;   // true = la carita se pinta roja
 
     string getCharacter(CellType type) {
         switch (type) {
@@ -40,13 +41,21 @@ private:
         case CellType::ENEMY:
         case CellType::ENEMY_H:
         case CellType::ENEMY_V:
-            return "ʃ";
+            return "§";
         case CellType::BUTTON:
+        case CellType::BUTTON_G:
+        case CellType::BUTTON_B:
             return "o";
         case CellType::DOOR:
+        case CellType::DOOR_G:
+        case CellType::DOOR_B:
             return "H";
         case CellType::BUSH:
             return "₪";
+        case CellType::WHIP_H:
+            return "─";
+        case CellType::WHIP_V:
+            return "│";
         default:
             return CHAR_EMPTY;
         }
@@ -61,7 +70,7 @@ private:
         case CellType::ROCK:
             return "\033[37m";   // gris
         case CellType::PLAYER:
-            return "\033[93m";   // amarillo brillante
+            return jugadorHerido ? "\033[91m" : "\033[93m";   // rojo brillante si está herido, amarillo normal
         case CellType::EXIT:
             return ANSI_DIAMOND;
         case CellType::ENEMY:
@@ -70,11 +79,19 @@ private:
         case CellType::ENEMY_V:
             return "\033[31m";   // rojo
         case CellType::BUTTON:
-            return "\033[33m";   // amarillo oscuro
         case CellType::DOOR:
-            return "\033[36m";   // cian
+            return "\033[91m";   // rojo
+        case CellType::BUTTON_G:
+        case CellType::DOOR_G:
+            return "\033[92m";   // verde
+        case CellType::BUTTON_B:
+        case CellType::DOOR_B:
+            return "\033[94m";   // azul
         case CellType::BUSH:
             return "\033[92m";   // verde brillante
+        case CellType::WHIP_H:
+        case CellType::WHIP_V:
+            return "\033[97m";   // blanco brillante
         default:
             return ANSI_EMPTY;
         }
@@ -101,6 +118,7 @@ public:
     Matrix<CellType>& getEntitiesBuffer() { return entitiesBuffer; }
     Matrix<string>& getHUDBuffer() { return hudBuffer; }
     Matrix<string>& getWallGlyphBuffer() { return wallGlyphBuffer; }
+    void setJugadorHerido(bool herido) { jugadorHerido = herido; }
 
     // Obliga a redibujar todo en el siguiente frame (por ejemplo, al volver de la pausa)
     void forceFullRedraw() {
@@ -119,6 +137,8 @@ public:
                 cell.character = getCharacter(selected);
                 cell.color = getColor(selected);
 
+             
+
                 if (selected == CellType::WALL) {
                     cell.character = wallGlyphBuffer.getValue(r, c);
                 }
@@ -131,8 +151,15 @@ public:
             for (int c = 0; c < hudBuffer.getColumns(); c++) {
                 string charActual = hudBuffer.getValue(r, c);
                 RenderCell cell;
-                cell.character = charActual.empty() ? CHAR_EMPTY : string(1, charActual[0]);
+                cell.character = charActual.empty() ? CHAR_EMPTY : charActual;
                 cell.color = ANSI_RESET;
+                if (charActual == "♥") {
+                    cell.color = "\033[91m";                // corazón lleno: rojo
+                }
+                else if (charActual == "~") {
+                    cell.character = "♥";                   // corazón perdido: mismo símbolo, en gris oscuro
+                    cell.color = "\033[38;5;240m";
+                }
                 finalBuffer.setValue(r, c, cell);
             }
         }
@@ -146,7 +173,7 @@ public:
                 RenderCell previous = previousFrame.getValue(r, c);
 
                 if (current.character != previous.character || current.color != previous.color) {
-                    output += "\033[" + to_string(r + 1) + ";" + to_string(c + 1) + "H";
+                    output += "\033[" + to_string(r + 1 + MARGEN_SUP) + ";" + to_string(c + 1 + MARGEN_IZQ) + "H";
                     output += current.color;
                     output += current.character;
                     output += ANSI_RESET;

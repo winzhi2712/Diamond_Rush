@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <functional>
 #include <iostream>
+#include "Constantes.h"
 
 // Guarda y muestra los 3 mejores puntajes (se conservan en un archivo de texto)
 class Puntajes {
@@ -58,11 +59,12 @@ public:
         return pos;
     }
 
-    // Imprime la lista. Si "resaltar" es 1..3, esa posición sale en amarillo.
+    // Imprime la lista. Si "resaltar" es 1..5, esa posición sale en amarillo.
     void imprimir(int resaltar = 0) const {
-        std::cout << "MEJORES PUNTAJES\n";
+        std::string pad(MARGEN_IZQ, ' ');
+        std::cout << pad << "MEJORES PUNTAJES\n";
         for (int i = 0; i < MAX; i++) {
-            std::cout << (i + 1) << ". ";
+            std::cout << pad << (i + 1) << ". ";
             if (i < (int)lista.size()) {
                 if (i + 1 == resaltar) std::cout << "\033[93m";
                 std::cout << lista[i] << "\033[0m";

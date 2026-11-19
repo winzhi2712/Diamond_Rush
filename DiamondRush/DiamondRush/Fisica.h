@@ -11,15 +11,21 @@
 
 //CONSTANTES DE CONFIGURACIÓN
 const int ticksPorSegundo = 25; // Velocidad del bucle del juego 
-const int ticksInvulnerable = 1 * ticksPorSegundo; // Duración de la invulnerabilidad tras recibir daño
+const int ticksInvulnerable = ticksPorSegundo / 2; // Duración de la invulnerabilidad tras recibir daño
 const int contactoDolor = 10; //Daño que resta tocar a un enemigo
 const int danoRoca = 20;      // Daño que resta que te caiga una roca encima
 const int puntosGema = 10;   // Puntos que se suman al recoger un diamante/gema
 const int maxEnemigos = 16;               // Número máximo de enemigos permitidos en simultáneo
+const int alcanceLatigo = 3;    // Casillas máximas que alcanza el látigo
+const int alcanceLatigoVertical = 2; // Así en vertical es más corto
+const int ticksLatigo = 4;      // Cuántos ticks se ve el látigo en pantalla
+const int cooldownLatigo = 8;   // Ticks de espera entre un latigazo y otro
+const int ticksPorPasoTira = 2;   // Ticks que tarda la piedra en avanzar una casilla al ser jalada
 
 // ESTRUCTURA DE RESULTADOS
 //Objeto que la fisica retorna al bucle prinipal después de procesar cada tick
 struct ResultadoTick {
+    bool volverAtras = false; // true si el jugador pisó la casilla de entrada (regresar al mapa anterior)
     int puntosGanados = 0;    // Acumulador de puntos obtenidos en este tick
     int dano = 0;// Daño acumulado que el jugador debe recibir en este tic
     bool nivelGanado = false; // Bandera booleana que indica si el jugador llegó a la salida
@@ -47,9 +53,23 @@ private:
     int filaJugador;
     int colJugador;
     int invulnerableTicks;   // Contador regresivo de protección contra daño del jugador
-    bool puertasAbiertas;    // Estado global de las puertas (true = abiertas, false = cerradas)
+    bool puertaAbierta[3];   // Estado de las puertas por color: 0 = rojo, 1 = verde, 2 = azul
     Enemigo enemigos[maxEnemigos]; // Arreglo estricto para almacenar todos los enemigos
     int numEnemigos;                 // Contador actual de enemigos registrados
+    int filaInicio;              // Casilla de entrada del nivel (sirve para regresar al mapa anterior)
+    int colInicio;
+    int mirandoF;                // Hacia dónde mira el jugador (para el látigo)
+    int mirandoC;
+    int latigoCooldown;
+    int latigoTicks;
+    int latigoLargo;
+    int latigoF[alcanceLatigo];  // Casillas donde está dibujado el látigo
+    int latigoC[alcanceLatigo];
+    bool tiraActiva;             // true mientras el látigo está jalando una piedra
+    int tiraF, tiraC;            // Posición actual de la piedra que se está jalando
+    int tiraDirF, tiraDirC;      // Dirección del látigo al lanzarlo
+    int tiraJugF, tiraJugC;      // Dónde estaba el jugador al lanzarlo (si se mueve, se cancela)
+    int tiraContador;
 
     // Verifica si unas coordenadas (f, c) se encuentran dentro de los límites válidos del mapa.
     bool dentro(int f, int c) {
@@ -74,9 +94,26 @@ private:
             ents.setValue(f, c, t);
     }
 
-    // Determina si un elemento fijo del mapa bloquea el paso (Pared o Puerta cerrada).
+    // Color de un botón (0 rojo, 1 verde, 2 azul) o -1 si la celda no es un botón
+    int colorBoton(CellType t) {
+        if (t == CellType::BUTTON) return 0;
+        if (t == CellType::BUTTON_G) return 1;
+        if (t == CellType::BUTTON_B) return 2;
+        return -1;
+    }
+
+    // Color de una puerta (0 rojo, 1 verde, 2 azul) o -1 si la celda no es una puerta
+    int colorPuerta(CellType t) {
+        if (t == CellType::DOOR) return 0;
+        if (t == CellType::DOOR_G) return 1;
+        if (t == CellType::DOOR_B) return 2;
+        return -1;
+    }
+
+    // Determina si un elemento fijo del mapa bloquea el paso (Pared o Puerta cerrada de su color).
     bool bloqueaMapa(CellType t) {
-        return t == CellType::WALL || (t == CellType::DOOR && !puertasAbiertas);
+        int p = colorPuerta(t);
+        return t == CellType::WALL || (p >= 0 && !puertaAbierta[p]);
     }
     // Regla crítica: Comprueba si una celda está totalmente libre para que una roca o enemigo entren.
     bool libreParaMover(int f, int c) {
@@ -96,10 +133,17 @@ private:
 
     // Procesa el intento de movimiento del jugador según la dirección recibida (df, dc).
     void moverJugador(int df, int dc, ResultadoTick& res) {
+        mirandoF = df;   
+        mirandoC = dc;   
         int nf = filaJugador + df;
         int nc = colJugador + dc;
-        if (!dentro(nf, nc))
+        if (!dentro(nf, nc)) {
+            if (filaJugador == filaInicio && colJugador == colInicio)
+                res.volverAtras = true;
+            if (mapaEn(filaJugador, colJugador) == CellType::EXIT)
+                res.nivelGanado = true;
             return;
+        }
 
         CellType m = mapaEn(nf, nc);
         if (bloqueaMapa(m))
@@ -140,14 +184,39 @@ private:
 
         if (m == CellType::EXIT)
             res.nivelGanado = true;
+
+        if (nf == filaInicio && nc == colInicio)  
+            res.volverAtras = true;
+    }
+
+    // Quita a un enemigo del arreglo y de la capa móvil
+    void eliminarEnemigoEn(int f, int c) {
+        for (int i = 0; i < numEnemigos; i++) {
+            if (enemigos[i].fila == f && enemigos[i].col == c) {
+                for (int j = i; j < numEnemigos - 1; j++) {
+                    enemigos[j] = enemigos[j + 1];
+                }
+                numEnemigos--;
+                ponerEnt(f, c, CellType::EMPTY);
+                return;
+            }
+        }
     }
 
     // Hace caer las rocas una celda por tick si hay espacio vacío debajo.
-    // Si una roca que venía cayendo aterriza justo encima del jugador, le hace daño.
+// Si una roca que venía cayendo aterriza justo encima del jugador, le hace daño.
+// Si una roca que venía cayendo le cae encima a un enemigo, lo mata.
     void actualizarRocas(ResultadoTick& res) {
         for (int f = mapa.getRows() - 2; f >= 0; f--) {
             for (int c = 0; c < mapa.getColumns(); c++) {
                 if (ents.getValue(f, c) != CellType::ROCK) continue;
+
+                // Solo mata si la roca ya venía en caída (una roca quieta no mata)
+                CellType debajo = entEn(f + 1, c);
+                if (rocaCayendo.getValue(f, c) &&
+                    (debajo == CellType::ENEMY_H || debajo == CellType::ENEMY_V || debajo == CellType::ENEMY)) {
+                    eliminarEnemigoEn(f + 1, c);
+                }
 
                 if (libreParaMover(f + 1, c)) {
                     // La roca cae una celda y queda marcada como "en caída"
@@ -167,20 +236,24 @@ private:
         }
     }
 
-    // Revisa si hay un objeto pesado (roca) o el jugador encima de un botón.
+    // Una puerta se abre solo si TODOS los botones de su color tienen una roca o al jugador encima.
     void actualizarBotones() {
-        bool presionado = false;
+        int total[3] = { 0, 0, 0 };
+        int activos[3] = { 0, 0, 0 };
         for (int f = 0; f < mapa.getRows(); f++) {
             for (int c = 0; c < mapa.getColumns(); c++) {
-                if (mapa.getValue(f, c) == CellType::BUTTON) {
-                    CellType e = ents.getValue(f, c);
-                    if (e == CellType::ROCK || e == CellType::PLAYER) {
-                        presionado = true;
-                    }
+                int col = colorBoton(mapa.getValue(f, c));
+                if (col < 0) continue;
+                total[col]++;
+                CellType e = ents.getValue(f, c);
+                if (e == CellType::ROCK || e == CellType::PLAYER) {
+                    activos[col]++;
                 }
             }
         }
-        puertasAbiertas = presionado;
+        for (int i = 0; i < 3; i++) {
+            puertaAbierta[i] = (total[i] > 0 && activos[i] == total[i]);
+        }
     }
 
     // Determina si una celda puede ser pisada por un enemigo.
@@ -251,6 +324,122 @@ private:
             }
         }
     }
+    
+
+    // Borra el dibujo del látigo (solo donde todavía sea látigo)
+    void limpiarLatigo() {
+        for (int i = 0; i < latigoLargo; i++) {
+            CellType e = entEn(latigoF[i], latigoC[i]);
+            if (e == CellType::WHIP_H || e == CellType::WHIP_V) {
+                ponerEnt(latigoF[i], latigoC[i], CellType::EMPTY);
+            }
+        }
+        latigoLargo = 0;
+        latigoTicks = 0;
+    }
+    // Dibuja el látigo desde la casilla "desde" hasta la casilla "hasta" (contadas desde el jugador)
+    void dibujarLatigo(int desde, int hasta, int dirF, int dirC) {
+        CellType tipo = (dirF != 0) ? CellType::WHIP_V : CellType::WHIP_H;
+        for (int i = desde; i <= hasta; i++) {
+            int f = filaJugador + dirF * i;
+            int c = colJugador + dirC * i;
+            if (entEn(f, c) == CellType::EMPTY && latigoLargo < alcanceLatigo) {
+                ponerEnt(f, c, tipo);
+                latigoF[latigoLargo] = f;
+                latigoC[latigoLargo] = c;
+                latigoLargo++;
+            }
+        }
+    }
+
+    // Látigo: se estira hasta la primera roca dentro del alcance y empieza a jalarla hacia el jugador.
+    // Alcance: 3 casillas en horizontal y 2 en vertical.
+    // Se detiene en paredes, puertas cerradas, arbustos, la salida y enemigos.
+    void usarLatigo() {
+        if (latigoCooldown > 0 || tiraActiva) return;
+        latigoCooldown = cooldownLatigo;
+        limpiarLatigo();
+
+        int alcance = (mirandoF != 0) ? alcanceLatigoVertical : alcanceLatigo;
+        int dibHasta = 0;   // hasta qué casilla se dibuja el látigo
+        for (int k = 1; k <= alcance; k++) {
+            int f = filaJugador + mirandoF * k;
+            int c = colJugador + mirandoC * k;
+            if (!dentro(f, c)) break;
+
+            CellType m = mapaEn(f, c);
+            if (bloqueaMapa(m) || m == CellType::BUSH || m == CellType::EXIT) break;
+
+            CellType e = entEn(f, c);
+
+            if (e == CellType::ROCK) {
+                dibHasta = k - 1;   // el látigo llega hasta la piedra, sin atravesarla
+                // Solo la jala si no está ya pegada y hay espacio libre hacia el jugador
+                if (k >= 2 && libreParaMover(filaJugador + mirandoF * (k - 1), colJugador + mirandoC * (k - 1))) {
+                    tiraActiva = true;
+                    tiraF = f;
+                    tiraC = c;
+                    tiraDirF = mirandoF;
+                    tiraDirC = mirandoC;
+                    tiraJugF = filaJugador;
+                    tiraJugC = colJugador;
+                    tiraContador = ticksPorPasoTira;
+                }
+                break;
+            }
+
+            if (e == CellType::ENEMY_H || e == CellType::ENEMY_V || e == CellType::ENEMY) {
+                dibHasta = k - 1;
+                break;
+            }
+
+            dibHasta = k;
+        }
+
+        dibujarLatigo(1, dibHasta, mirandoF, mirandoC);
+        latigoTicks = (latigoLargo > 0) ? ticksLatigo : 0;
+    }
+
+    // Avanza una casilla la piedra que se está jalando y acorta el látigo.
+    // Se cancela si el jugador se mueve, si la piedra cae o si algo bloquea el camino.
+    void avanzarTira() {
+        if (!tiraActiva) return;
+
+        if (filaJugador != tiraJugF || colJugador != tiraJugC || entEn(tiraF, tiraC) != CellType::ROCK) {
+            tiraActiva = false;
+            limpiarLatigo();
+            return;
+        }
+
+        tiraContador--;
+        if (tiraContador > 0) return;
+        tiraContador = ticksPorPasoTira;
+
+        limpiarLatigo();   // se quita el látigo para que no estorbe a la piedra
+
+        int nf = tiraF - tiraDirF;
+        int nc = tiraC - tiraDirC;
+        if (!libreParaMover(nf, nc)) {
+            tiraActiva = false;
+            return;
+        }
+
+        ponerEnt(tiraF, tiraC, CellType::EMPTY);
+        ponerEnt(nf, nc, CellType::ROCK);
+        rocaCayendo.setValue(tiraF, tiraC, false);
+        rocaCayendo.setValue(nf, nc, false);
+        tiraF = nf;
+        tiraC = nc;
+
+        int dist = std::abs(tiraF - filaJugador) + std::abs(tiraC - colJugador);
+        if (dist <= 1) {
+            tiraActiva = false;   // la piedra ya quedó pegada al jugador
+            return;
+        }
+
+        dibujarLatigo(1, dist - 1, tiraDirF, tiraDirC);
+        latigoTicks = ticksLatigo;
+    }
 
 public:
     Fisica(Matrix<CellType>& mapaFijo, Matrix<CellType>& entidades)
@@ -260,20 +449,37 @@ public:
         filaJugador = 0;
         colJugador = 0;
         invulnerableTicks = 0;
-        puertasAbiertas = false;
+        for (int i = 0; i < 3; i++) puertaAbierta[i] = false;
         numEnemigos = 0;
+        filaInicio = -1;
+        colInicio = -1;
+        mirandoF = 0;
+        mirandoC = 1;
+        latigoCooldown = 0;
+        latigoTicks = 0;
+        latigoLargo = 0;
+        tiraActiva = false;
+        tiraF = 0;
+        tiraC = 0;
+        tiraDirF = 0;
+        tiraDirC = 0;
+        tiraJugF = 0;
+        tiraJugC = 0;
+        tiraContador = 0;
     }
 
     void reiniciarNivel() {
         numEnemigos = 0;
         invulnerableTicks = 0;
-        puertasAbiertas = false;
+        for (int i = 0; i < 3; i++) puertaAbierta[i] = false;
         rocaCayendo.setAll(false);
     }
 
     void colocarJugador(int f, int c) {
         filaJugador = f;
         colJugador = c;
+        filaInicio = f;   
+        colInicio = c;  
         ponerEnt(f, c, CellType::PLAYER);
     }
 
@@ -306,18 +512,25 @@ public:
             moverJugador(0, -1, res);
         else if (accion == Mov::RIGHT)
             moverJugador(0, 1, res);
+        else if (accion == Mov::LATIGO)
+            usarLatigo();
 
+        avanzarTira();
         actualizarRocas(res);
         actualizarBotones();
         actualizarEnemigos(res);
 
         if (invulnerableTicks > 0) invulnerableTicks--;
+        if (latigoCooldown > 0) latigoCooldown--;
+        if (!tiraActiva && latigoTicks > 0) {
+            latigoTicks--;
+            if (latigoTicks == 0) limpiarLatigo();
+        }
 
         return res;
     }
 
     int getFilaJugador() { return filaJugador; }
     int getColJugador() { return colJugador; }
-    bool getPuertasAbiertas() { return puertasAbiertas; }
     int getInvulnerableTicks() { return invulnerableTicks; }
 };

@@ -8,12 +8,18 @@ enum class CellType {
     ROCK,
     PLAYER,
     EXIT,
-    DOOR,
-    BUTTON,
+    DOOR,       // Puerta roja
+    BUTTON,     // Botón rojo
     ENEMY,
     ENEMY_H,    // Enemigo horizontal (movimiento de lado a lado)
-    ENEMY_V, // Enemigo vertical (movimiento de arriba a abajo)
-    BUSH   
+    ENEMY_V,    // Enemigo vertical (movimiento de arriba a abajo)
+    BUSH,
+    WHIP_H,     // Látigo dibujado en horizontal
+    WHIP_V,     // Látigo dibujado en vertical
+    DOOR_G,     // Puerta verde
+    DOOR_B,     // Puerta azul
+    BUTTON_G,   // Botón verde
+    BUTTON_B    // Botón azul
 };
 
 // Estados globales del juego

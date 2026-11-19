@@ -21,6 +21,7 @@ using namespace std;
 using namespace std::chrono;
 
 const int TOTAL_NIVELES = 3;
+const bool MODO_DEV = true;   // true = teclas 1, 2 y 3 saltan de nivel; PONERLO en false antes de entregar
 
 int main() {
 #ifdef _WIN32
@@ -33,9 +34,6 @@ int main() {
     KeyMap keyMap;
     Puntajes puntajes;   // Top 5 de puntajes, guardado en puntajes.txt
 
-    // Coordenadas de las gemas ya recolectadas en el nivel actual
-    vector<pair<int, int>> gemasRecolectadasSession;
-
     if (!terminal.checkMinSize()) {
         cout << "Advertencia: La terminal es muy pequeña. Se recomienda al menos "
             << MIN_TERMINAL_WIDTH << "x" << MIN_TERMINAL_HEIGHT << "." << endl;
@@ -43,39 +41,61 @@ int main() {
 
     GameState estadoActual = GameState::MENU;
 
-    GameMap nivelActual;
-    Render* render = nullptr;
+    // Cada nivel conserva su propio estado para poder ir y volver entre mapas
+    Render* renders[TOTAL_NIVELES + 1] = { nullptr };
+    Fisica* fisicas[TOTAL_NIVELES + 1] = { nullptr };
+    vector<pair<int, int>> gemasPorNivel[TOTAL_NIVELES + 1];   // gemas ya recolectadas en cada nivel
+    Render* render = nullptr;   // nivel que se está jugando ahora
     Fisica* fisica = nullptr;
 
     bool ejecutandoJuego = true;
     int numeroNivel = 1;
 
-    // Carga el nivel indicado por numeroNivel (nivel1.txt, nivel2.txt, nivel3.txt)
-    auto cargarNivelActual = [&]() {
-        string ruta = "nivel" + to_string(numeroNivel) + ".txt";
-        nivelActual = MapLoader::cargarNivel(ruta);
+    // Construye (o reconstruye desde cero) el nivel n leyendo nivelN.txt
+    auto construirNivel = [&](int n) {
+        GameMap datos = MapLoader::cargarNivel("nivel" + to_string(n) + ".txt");
 
-        if (render != nullptr) delete render;
-        render = new Render(MAP_HEIGHT, MAP_WIDTH);
+        if (fisicas[n] != nullptr) { delete fisicas[n]; fisicas[n] = nullptr; }
+        if (renders[n] != nullptr) { delete renders[n]; renders[n] = nullptr; }
 
+        renders[n] = new Render(MAP_HEIGHT, MAP_WIDTH);
         for (int r = 0; r < MAP_HEIGHT; r++) {
             for (int c = 0; c < MAP_WIDTH; c++) {
-                render->getMapBuffer().setValue(r, c, nivelActual.grid[r][c]);
-                render->getEntitiesBuffer().setValue(r, c, nivelActual.entities[r][c]);
-                render->getWallGlyphBuffer().setValue(r, c, nivelActual.glyphs[r][c]);
+                renders[n]->getMapBuffer().setValue(r, c, datos.grid[r][c]);
+                renders[n]->getEntitiesBuffer().setValue(r, c, datos.entities[r][c]);
+                renders[n]->getWallGlyphBuffer().setValue(r, c, datos.glyphs[r][c]);
             }
         }
 
-        if (fisica != nullptr) delete fisica;
-        fisica = new Fisica(render->getMapBuffer(), render->getEntitiesBuffer());
+        fisicas[n] = new Fisica(renders[n]->getMapBuffer(), renders[n]->getEntitiesBuffer());
         // colocarJugador recibe (fila, columna)
-        fisica->colocarJugador(nivelActual.playerY, nivelActual.playerX);
+        fisicas[n]->colocarJugador(datos.playerY, datos.playerX);
 
-        for (const auto& ene : nivelActual.enemigos) {
-            fisica->agregarEnemigo(ene.fila, ene.col, ene.dirFila, ene.dirCol, ene.ticks, ene.persigue, ene.tipoCelda);
+        for (const auto& ene : datos.enemigos) {
+            fisicas[n]->agregarEnemigo(ene.fila, ene.col, ene.dirFila, ene.dirCol, ene.ticks, ene.persigue, ene.tipoCelda);
         }
 
+        gemasPorNivel[n].clear();
+        };
+
+    // Cambia el nivel que se está jugando (el nivel ya debe estar construido)
+    auto cambiarANivel = [&](int n) {
+        numeroNivel = n;
+        render = renders[n];
+        fisica = fisicas[n];
         terminal.clearTerminal();
+        render->forceFullRedraw();
+        };
+
+    // Libera todos los niveles (al empezar una partida nueva o al salir)
+    auto liberarNiveles = [&]() {
+        for (int i = 1; i <= TOTAL_NIVELES; i++) {
+            if (fisicas[i] != nullptr) { delete fisicas[i]; fisicas[i] = nullptr; }
+            if (renders[i] != nullptr) { delete renders[i]; renders[i] = nullptr; }
+            gemasPorNivel[i].clear();
+        }
+        render = nullptr;
+        fisica = nullptr;
         };
 
     while (ejecutandoJuego) {
@@ -98,9 +118,9 @@ int main() {
                     Mov mov = keyMap.getMov(tecla);
                     if (mov == Mov::YES) {
                         game.reset();
-                        numeroNivel = 1;
-                        gemasRecolectadasSession.clear();
-                        cargarNivelActual();
+                        liberarNiveles();
+                        construirNivel(1);
+                        cambiarANivel(1);
 
                         estadoActual = GameState::PLAYING;
                         enMenu = false;
@@ -124,6 +144,13 @@ int main() {
 
             Mov movimiento = Mov::VACIA;
             if (tecla != 0) {
+                // Atajo de desarrollo: las teclas 1, 2 y 3 saltan directo a ese nivel
+                if (MODO_DEV && tecla >= '1' && tecla <= '0' + TOTAL_NIVELES) {
+                    int destino = tecla - '0';
+                    if (fisicas[destino] == nullptr) construirNivel(destino);
+                    cambiarANivel(destino);
+                    continue;
+                }
                 movimiento = keyMap.getMov(tecla);
 
                 if (movimiento == Mov::PAUSE) {
@@ -137,12 +164,15 @@ int main() {
                 }
                 // Reiniciar el nivel actual con la tecla R
                 else if (movimiento == Mov::RESTART) {
-                    cargarNivelActual();
+                    vector<pair<int, int>> gemas = gemasPorNivel[numeroNivel];   // copia, porque construirNivel limpia la lista
+                    construirNivel(numeroNivel);
+                    gemasPorNivel[numeroNivel] = gemas;
 
                     // Borrar las gemas que el jugador ya había agarrado en este nivel
-                    for (const auto& gema : gemasRecolectadasSession) {
-                        render->getEntitiesBuffer().setValue(gema.first, gema.second, CellType::EMPTY);
+                    for (const auto& gema : gemas) {
+                        renders[numeroNivel]->getEntitiesBuffer().setValue(gema.first, gema.second, CellType::EMPTY);
                     }
+                    cambiarANivel(numeroNivel);
                     continue;
                 }
             }
@@ -153,7 +183,7 @@ int main() {
             // 2. Puntos por gemas (se recuerda su posición para que no reaparezcan al reiniciar)
             if (resultado.puntosGanados > 0) {
                 game.addScore(resultado.puntosGanados);
-                gemasRecolectadasSession.push_back({ fisica->getFilaJugador(), fisica->getColJugador() });
+                gemasPorNivel[numeroNivel].push_back({ fisica->getFilaJugador(), fisica->getColJugador() });
             }
 
             // 3. Daño recibido
@@ -167,12 +197,12 @@ int main() {
                 continue;
             }
 
-            // 5. Nivel completado
+            // 5. Cambio de nivel (ir adelante o regresar al mapa anterior)
             if (resultado.nivelGanado) {
                 if (numeroNivel < TOTAL_NIVELES) {
-                    numeroNivel++;
-                    gemasRecolectadasSession.clear();   // las posiciones de las gemas son de otro nivel
-                    cargarNivelActual();                // el reloj sigue corriendo: 5 minutos para los tres niveles
+                    int siguiente = numeroNivel + 1;
+                    if (fisicas[siguiente] == nullptr) construirNivel(siguiente);
+                    cambiarANivel(siguiente);   // el reloj sigue corriendo: 5 minutos para los tres niveles
                 }
                 else {
                     game.addScore(game.timeLeft() * 5); // bono por el tiempo que sobró, solo al terminar todo
@@ -180,6 +210,13 @@ int main() {
                 }
                 continue;
             }
+            if (resultado.volverAtras && numeroNivel > 1) {
+                cambiarANivel(numeroNivel - 1);
+                continue;
+            }
+
+            // La carita se pone roja mientras dura la invulnerabilidad tras recibir daño
+            render->setJugadorHerido(fisica->getInvulnerableTicks() > 0);
 
             // 6. HUD
             GameStats stats;
@@ -237,9 +274,9 @@ int main() {
             Pantallas::victory();
 
             int posicion = puntajes.agregar(game.getScore());
-            terminal.gotoxy(0, 7);
+            terminal.gotoxy(MARGEN_IZQ, 7 + MARGEN_SUP);
             cout << "PUNTAJE FINAL: " << game.getScore() << endl;
-            if (posicion > 0) cout << "NUEVO RECORD! Posicion " << posicion << endl;
+            if (posicion > 0) cout << string(MARGEN_IZQ, ' ') << "NUEVO RECORD! Posicion " << posicion << endl;
             cout << endl;
             puntajes.imprimir(posicion);
             cout << flush;
@@ -267,9 +304,9 @@ int main() {
             Pantallas::gameOver();
 
             int posicion = puntajes.agregar(game.getScore());
-            terminal.gotoxy(0, 7);
+            terminal.gotoxy(MARGEN_IZQ, 7 + MARGEN_SUP);
             cout << "PUNTAJE OBTENIDO: " << game.getScore() << endl;
-            if (posicion > 0) cout << "NUEVO RECORD! Posicion " << posicion << endl;
+            if (posicion > 0) cout << string(MARGEN_IZQ, ' ') << "NUEVO RECORD! Posicion " << posicion << endl;
             cout << endl;
             puntajes.imprimir(posicion);
             cout << flush;
@@ -291,8 +328,7 @@ int main() {
     }
 
     // Limpieza de memoria dinámica al salir
-    if (render != nullptr) delete render;
-    if (fisica != nullptr) delete fisica;
+    liberarNiveles();
 
     return 0;
 }
