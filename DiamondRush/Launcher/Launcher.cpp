@@ -261,8 +261,28 @@ int main(int argc, char* argv[]) {
                     cout << ANSI_RESET << "\033[2J\033[H" << flush;
 
                     fs::path exe = (sel == 0) ? rutaConsola : rutaGui;
+
+#ifndef _WIN32
+                    // En Linux la tecla Enter llega como codigo 10 (el terminal convierte CR en LF),
+                    // pero el juego de consola solo reconoce el 13. Se desactiva esa conversion
+                    // mientras corre el juego y se deja como estaba al volver.
+                    struct termios original;
+                    bool termiosOk = (tcgetattr(STDIN_FILENO, &original) == 0);
+                    if (termiosOk) {
+                        struct termios sinConversion = original;
+                        sinConversion.c_iflag &= ~ICRNL;
+                        tcsetattr(STDIN_FILENO, TCSANOW, &sinConversion);
+                    }
+#endif
+
                     int resultado = std::system(comando(exe).c_str());
                     (void)resultado;
+
+#ifndef _WIN32
+                    if (termiosOk) {
+                        tcsetattr(STDIN_FILENO, TCSANOW, &original);
+                    }
+#endif
 
                     // Al cerrar el juego se vuelve a esta pantalla
                     terminal.init();

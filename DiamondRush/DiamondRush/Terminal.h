@@ -139,7 +139,7 @@ public:
                             if (seq[1] == 'A')
                                 teclaFlecha = 256 + 72; // ARRIBA
                             else if (seq[1] == 'B')
-                                teclaFlecha = 256 + 88; // ABAJO
+                                teclaFlecha = 256 + 80; // ABAJO
                             else if (seq[1] == 'C')
                                 teclaFlecha = 256 + 77; // DERECHA
                             else if (seq[1] == 'D')
