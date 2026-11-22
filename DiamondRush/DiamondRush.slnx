@@ -4,4 +4,6 @@
     <Platform Name="x86" />
   </Configurations>
   <Project Path="DiamondRush/DiamondRush.vcxproj" Id="e730ff8a-4b2f-4b51-af6b-f6969165e1e6" />
+  <Project Path="DiamondRushGUI/DiamondRushGUI.vcxproj" Id="2fd57ed5-1f73-4459-92c5-dc8ad1085f9f" />
+  <Project Path="Launcher/Launcher.vcxproj" Id="7ac5f403-6a18-4f77-bb66-29ef67addfb9" />
 </Solution>

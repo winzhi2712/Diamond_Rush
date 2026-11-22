@@ -150,6 +150,7 @@
     <ClInclude Include="KeyMap.h" />
     <ClInclude Include="MapLoader.h" />
     <ClInclude Include="Matrix.h" />
+    <ClInclude Include="nombreConsola.h" />
     <ClInclude Include="Pantallas.h" />
     <ClInclude Include="Puntajes.h" />
     <ClInclude Include="Render.h" />

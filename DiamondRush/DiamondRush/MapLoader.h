@@ -89,6 +89,10 @@ public:
                 else if (simbolo == "●" || simbolo == CHAR_ROCK) {
                     mapaJuego.entities[fila][col] = CellType::ROCK;
                 }
+                // 5b. Corazones (capa móvil): suben la vida al pisarlos
+                else if (simbolo == "♥" || simbolo == "❤") {
+                    mapaJuego.entities[fila][col] = CellType::HEART;
+                }
                 // 6. Arbustos destructibles (capa fija)
                 else if (simbolo == "▒" || simbolo == "░" || simbolo == "❀") {
                     mapaJuego.grid[fila][col] = CellType::BUSH;
@@ -120,7 +124,7 @@ public:
                     ene.col = col;
                     ene.dirFila = 0;
                     ene.dirCol = 1;
-                    ene.ticks = 4;
+                    ene.ticks = 5;
                     ene.persigue = false;
                     ene.tipoCelda = CellType::ENEMY_H;
                     mapaJuego.enemigos.push_back(ene);

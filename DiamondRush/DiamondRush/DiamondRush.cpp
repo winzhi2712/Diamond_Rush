@@ -17,6 +17,8 @@
 #include "HUD.h"
 #include "Puntajes.h"
 #include "Benchmark.h"
+#include "NombreConsola.h" 
+
 
 using namespace std;
 using namespace std::chrono;
@@ -101,6 +103,8 @@ int main() {
 
     Benchmark benchmark;
     int frameActual = 0;
+    int popupTicks = 0;    // cuánto falta para que desaparezca el "+10"
+    int popupValor = 0;
     const bool MODO_BENCHMARK = false; //Poner en true para activar el modo benchmark
     const int FRAMES_BENCHAMRK = 500;
 
@@ -137,13 +141,21 @@ int main() {
                 if (tecla != 0) {
                     Mov mov = keyMap.getMov(tecla);
                     if (mov == Mov::YES) {
-                        game.reset();
-                        liberarNiveles();
-                        construirNivel(1);
-                        cambiarANivel(1);
-
-                        estadoActual = GameState::PLAYING;
-                        enMenu = false;
+                        string nombre = pedirNombre(terminal);
+                        if (nombre.empty()) {
+                            // ESC: vuelve a dibujar el menú
+                            enMenu = false;
+                        }
+                        else {
+                            puntajes.setNombre(nombre);
+                            game.reset();
+                            liberarNiveles();
+                            construirNivel(1);
+                            cambiarANivel(1);
+                            popupTicks = 0;
+                            estadoActual = GameState::PLAYING;
+                            enMenu = false;
+                        }
                     }
                     else if (mov == Mov::EXIT) {
                         ejecutandoJuego = false;
@@ -222,9 +234,19 @@ int main() {
                 });
             benchmark.registerFisica(tFisica);
 
-            // 2. Puntos por gemas (se recuerda su posición para que no reaparezcan al reiniciar)
-            if (resultado.puntosGanados > 0) {
-                game.addScore(resultado.puntosGanados);
+            // 2. Puntos (gemas, enemigos eliminados, corazón con vida llena) y curación
+            int ganado = resultado.puntosGanados + resultado.puntosExtra;
+            if (resultado.curacion > 0) {
+                if (game.getVide() >= 100) ganado += puntosCorazonLleno;
+                else game.curar(resultado.curacion);
+            }
+            if (ganado > 0) {
+                game.addScore(ganado);
+                if (popupTicks > 0) popupValor += ganado; else popupValor = ganado;
+                popupTicks = 20;   // unos 0,8 segundos
+            }
+            // Se recuerda la posición para que gemas y corazones no reaparezcan al reiniciar con R
+            if (resultado.puntosGanados > 0 || resultado.curacion > 0) {
                 gemasPorNivel[numeroNivel].push_back({ fisica->getFilaJugador(), fisica->getColJugador() });
             }
 
@@ -266,6 +288,8 @@ int main() {
             stats.score = game.getScore();
             stats.timeRemaining = game.timeLeft();
             stats.currentLevel = numeroNivel;
+            stats.bonus = (popupTicks > 0) ? popupValor : 0;
+            if (popupTicks > 0) popupTicks--;
 
             HUD hud(render->getHUDBuffer());
             double tHud = medirT([&]() {

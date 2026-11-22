@@ -13,7 +13,7 @@ private:
 
 	std::chrono::steady_clock::time_point start;
 	std::chrono::steady_clock::time_point pausaInicio;
-	const int LIMITE_TIEMPO = 300;
+	const int LIMITE_TIEMPO = 480;
 
 public:
 	Game() {
@@ -45,6 +45,10 @@ public:
 	}
 	void perderVida(int damage) {
 		vida -= damage;
+	}
+	void curar(int cantidad) {
+		vida += cantidad;
+		if (vida > 100) vida = 100;
 	}
 	int getVide() {
 		return vida;

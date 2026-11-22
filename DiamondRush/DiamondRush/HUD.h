@@ -66,6 +66,9 @@ public:
 
         writeText(0, 20, "TIEMPO: " + to_string(stats.timeRemaining));
         writeText(1, 0, "PUNTOS: " + to_string(stats.score));
+        if (stats.bonus > 0) {
+            writeText(1, 8 + (int)to_string(stats.score).length() + 2, "+" + to_string(stats.bonus));
+        }
         writeText(1, 20, "NIVEL: " + to_string(stats.currentLevel));
     }
 };

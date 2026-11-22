@@ -85,6 +85,8 @@ private:
             return "─";
         case CellType::WHIP_V:
             return "│";
+        case CellType::HEART:
+            return "♥";
         default:
             return CHAR_EMPTY;
         }
@@ -121,6 +123,8 @@ private:
         case CellType::WHIP_H:
         case CellType::WHIP_V:
             return "\033[97m";   // blanco brillante
+        case CellType::HEART:
+            return "\033[91m";   // rojo brillante
         default:
             return ANSI_EMPTY;
         }

@@ -19,8 +19,12 @@ const int maxEnemigos = 16;               // Número máximo de enemigos permiti
 const int alcanceLatigo = 3;    // Casillas máximas que alcanza el látigo
 const int alcanceLatigoVertical = 2; // Así en vertical es más corto
 const int ticksLatigo = 4;      // Cuántos ticks se ve el látigo en pantalla
-const int cooldownLatigo = 8;   // Ticks de espera entre un latigazo y otro
+const int cooldownLatigo = 5;   // Ticks de espera entre un latigazo y otro
 const int ticksPorPasoTira = 2;   // Ticks que tarda la piedra en avanzar una casilla al ser jalada
+const int vidaCorazon = 10;  // Vida que recupera un corazón
+const int puntosCorazonLleno = 30;  // Puntos si recoges un corazón con la vida al 100
+const int puntosEnemigo = 30;       // Puntos por aplastar un enemigo con una roca
+
 
 // ESTRUCTURA DE RESULTADOS
 //Objeto que la fisica retorna al bucle prinipal después de procesar cada tick
@@ -29,6 +33,11 @@ struct ResultadoTick {
     int puntosGanados = 0;    // Acumulador de puntos obtenidos en este tick
     int dano = 0;// Daño acumulado que el jugador debe recibir en este tic
     bool nivelGanado = false; // Bandera booleana que indica si el jugador llegó a la salida
+    int curacion = 0;         // Vida recuperada en este tick
+    int puntosExtra = 0;      // Puntos por eliminar enemigos en este tick
+    bool rocaAterrizo = false; // true si una roca terminó de caer en este tick
+    bool latigo = false;       // true si se lanzó el látigo en este tick
+    bool puertaAbrio = false;  // true si una puerta se desbloqueó en este tick
 };
 
 //ESTRUCTURA DE ENEMIGO
@@ -63,8 +72,8 @@ private:
     int latigoCooldown;
     int latigoTicks;
     int latigoLargo;
-    int latigoF[alcanceLatigo];  // Casillas donde está dibujado el látigo
-    int latigoC[alcanceLatigo];
+    int latigoF[alcanceLatigo] = {};
+    int latigoC[alcanceLatigo] = {};
     bool tiraActiva;             // true mientras el látigo está jalando una piedra
     int tiraF, tiraC;            // Posición actual de la piedra que se está jalando
     int tiraDirF, tiraDirC;      // Dirección del látigo al lanzarlo
@@ -170,6 +179,11 @@ private:
             res.puntosGanados += puntosGema;
             ponerEnt(nf, nc, CellType::EMPTY);
         }
+        // Caso D: Choca con un corazón
+        else if (e == CellType::HEART) {
+            res.curacion += vidaCorazon;
+            ponerEnt(nf, nc, CellType::EMPTY);
+        }
 
         // SI EL JUGADOR CAMINA SOBRE UN ARBUSTO: Lo destruye (convierte en vacío en el mapa fijo)
         if (m == CellType::BUSH) {
@@ -216,6 +230,7 @@ private:
                 if (rocaCayendo.getValue(f, c) &&
                     (debajo == CellType::ENEMY_H || debajo == CellType::ENEMY_V || debajo == CellType::ENEMY)) {
                     eliminarEnemigoEn(f + 1, c);
+                    res.puntosExtra += puntosEnemigo;
                 }
 
                 if (libreParaMover(f + 1, c)) {
@@ -226,6 +241,7 @@ private:
                     rocaCayendo.setValue(f + 1, c, true);
                 }
                 else {
+                    if (rocaCayendo.getValue(f, c)) res.rocaAterrizo = true;
                     // Si venía cayendo y justo debajo está el jugador, lo golpea
                     if (rocaCayendo.getValue(f, c) && f + 1 == filaJugador && c == colJugador) {
                         recibirDano(res, danoRoca);
@@ -237,7 +253,7 @@ private:
     }
 
     // Una puerta se abre solo si TODOS los botones de su color tienen una roca o al jugador encima.
-    void actualizarBotones() {
+    bool actualizarBotones() {
         int total[3] = { 0, 0, 0 };
         int activos[3] = { 0, 0, 0 };
         for (int f = 0; f < mapa.getRows(); f++) {
@@ -251,9 +267,13 @@ private:
                 }
             }
         }
+        bool abrio = false;
         for (int i = 0; i < 3; i++) {
-            puertaAbierta[i] = (total[i] > 0 && activos[i] == total[i]);
+            bool nueva = (total[i] > 0 && activos[i] == total[i]);
+            if (nueva && !puertaAbierta[i]) abrio = true;
+            puertaAbierta[i] = nueva;
         }
+        return abrio;
     }
 
     // Determina si una celda puede ser pisada por un enemigo.
@@ -512,12 +532,15 @@ public:
             moverJugador(0, -1, res);
         else if (accion == Mov::RIGHT)
             moverJugador(0, 1, res);
-        else if (accion == Mov::LATIGO)
+        else if (accion == Mov::LATIGO) {
+            int antes = latigoCooldown;
             usarLatigo();
+            res.latigo = (latigoCooldown > antes);   // true solo si el látigo se lanzó de verdad
+        }
 
         avanzarTira();
         actualizarRocas(res);
-        actualizarBotones();
+        if (actualizarBotones()) res.puertaAbrio = true;
         actualizarEnemigos(res);
 
         if (invulnerableTicks > 0) invulnerableTicks--;
@@ -533,4 +556,16 @@ public:
     int getFilaJugador() { return filaJugador; }
     int getColJugador() { return colJugador; }
     int getInvulnerableTicks() { return invulnerableTicks; }
+
+    // Dirección actual del enemigo que está en (f, c). Devuelve false si no hay ninguno.
+    bool direccionEnemigoEn(int f, int c, int& dF, int& dC) {
+        for (int i = 0; i < numEnemigos; i++) {
+            if (enemigos[i].fila == f && enemigos[i].col == c) {
+                dF = enemigos[i].dirFila;
+                dC = enemigos[i].dirCol;
+                return true;
+            }
+        }
+        return false;
+    }
 };
