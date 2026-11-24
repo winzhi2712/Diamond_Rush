@@ -85,6 +85,10 @@ public:
                 else if (simbolo == "◆" || simbolo == CHAR_DIAMOND) {
                     mapaJuego.entities[fila][col] = CellType::DIAMOND;
                 }
+                // 4b. Corazones (capa móvil, igual que los diamantes)
+                else if (simbolo == "♥" || simbolo == CHAR_HEART) {
+                    mapaJuego.entities[fila][col] = CellType::HEART;
+                }
                 // 5. Rocas (capa móvil, para que caigan y se empujen)
                 else if (simbolo == "●" || simbolo == CHAR_ROCK) {
                     mapaJuego.entities[fila][col] = CellType::ROCK;

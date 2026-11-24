@@ -134,12 +134,12 @@ public:
 
                 if (poll(&pfd, 1, 5) > 0) { // Tiempo de espera de 5 milisegundos
                     if (read(STDIN_FILENO, &seq[0], 1) > 0 && read(STDIN_FILENO, &seq[1], 1) > 0) {
-                        if (seq[0] == '[') {
+                        if (seq[0] == '[' || seq[0] == 'O') {
                             int teclaFlecha = 0;
                             if (seq[1] == 'A')
                                 teclaFlecha = 256 + 72; // ARRIBA
                             else if (seq[1] == 'B')
-                                teclaFlecha = 256 + 88; // ABAJO
+                                teclaFlecha = 256 + 80; // ABAJO
                             else if (seq[1] == 'C')
                                 teclaFlecha = 256 + 77; // DERECHA
                             else if (seq[1] == 'D')

@@ -2,9 +2,12 @@
 #include <string>
 #include <chrono>
 #include <thread>
+#include <cctype>
 #include <vector>
+#include <ctime>
 #include <utility>
 #include "Constantes.h"
+
 #include "Tipos.h"
 #include "MapLoader.h"
 #include "Matrix.h"
@@ -31,14 +34,34 @@ int main() {
 
     Terminal terminal;
     terminal.init();
+    srand(static_cast<unsigned>(time(nullptr)));
     Game game;
     KeyMap keyMap;
     Puntajes puntajes;   // Top 5 de puntajes, guardado en puntajes.txt
+    string nombreJugador = "JUGADOR";   // provisorio: en el Paso 7 se pide al jugador antes de empezar
+    const int FILA_CARTEL = 12;   // fila donde van NUEVO RECORD / ENTRAS AL TOP
 
-    if (!terminal.checkMinSize()) {
-        cout << "Advertencia: La terminal es muy pequeña. Se recomienda al menos "
-            << MIN_TERMINAL_WIDTH << "x" << MIN_TERMINAL_HEIGHT << "." << endl;
-    }
+    // Pantalla de resultado (victoria y game over): registra el puntaje, muestra el cartel y el top 5.
+    // Devuelve la posición lograda (0 si no entró al top).
+    auto mostrarResultado = [&](const string& etiquetaPuntaje) -> int {
+        int posicion = puntajes.agregar(nombreJugador, game.getScore());
+
+        terminal.gotoxy(0, 9);   // fila 10 de la pantalla
+        cout << string(MARGEN_IZQ, ' ') << nombreJugador << " - " << etiquetaPuntaje << game.getScore();
+
+        if (posicion == 1) {
+            Pantallas::nuevoRecord(0, FILA_CARTEL);
+        }
+        else if (posicion > 1) {
+            Pantallas::entrasAlTop(posicion, FILA_CARTEL);
+        }
+
+        terminal.gotoxy(0, FILA_CARTEL + 5);   // el top 5 va debajo del cartel
+        puntajes.imprimir(posicion);
+        cout << flush;
+        return posicion;
+        };
+ 
 
     GameState estadoActual = GameState::MENU;
 
@@ -104,6 +127,26 @@ int main() {
     const bool MODO_BENCHMARK = false; //Poner en true para activar el modo benchmark
     const int FRAMES_BENCHAMRK = 500;
 
+    // No se arranca hasta que la terminal sea lo bastante grande (en benchmark se omite)
+    if (!MODO_BENCHMARK) {
+        while (ejecutandoJuego && !terminal.checkMinSize()) {
+            terminal.clearTerminal();
+            cout << "La terminal es muy pequena." << endl;
+            cout << "Se necesita al menos " << MIN_TERMINAL_WIDTH << " columnas x "
+                << MIN_TERMINAL_HEIGHT << " filas." << endl;
+            cout << "Agrandala y el juego continuara solo. (ESC para salir)" << endl;
+
+            for (int i = 0; i < 10 && ejecutandoJuego; i++) {   // espera ~0.5 s revisando ESC
+                terminal.pollInputs();
+                int tecla = terminal.obtenerSiguiente();
+                if (tecla != 0 && keyMap.getMov(tecla) == Mov::EXIT) {
+                    ejecutandoJuego = false;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            }
+        }
+    }
+
     if (MODO_BENCHMARK) {
         benchmark.startBench(false);
         game.reset();
@@ -124,31 +167,131 @@ int main() {
         // ESTADO: MENÚ PRINCIPAL
         // ==========================================
         if (estadoActual == GameState::MENU) {
-            terminal.clearTerminal();
-            Pantallas::mainTitle();
-            cout << "\n\n";
-            puntajes.imprimir();
-            cout << flush;
+            Pantallas::menuPrincipal();
+            puntajes.dibujarTop(MENU_TOP_FILA, MENU_TOP_COL);
+
+            int seleccion = 0;        // 0 = JUGAR, 1 = SALIR
+            bool brillante = true;
+            Pantallas::menuOpciones(seleccion, brillante);
+
+            LluviaMenu lluvia;
+            int cuentaLluvia = 0;
+            int cuentaParpadeo = 0;
 
             bool enMenu = true;
             while (enMenu && ejecutandoJuego) {
                 terminal.pollInputs();
                 int tecla = terminal.obtenerSiguiente();
-                if (tecla != 0) {
+                while (tecla != 0 && enMenu) {
                     Mov mov = keyMap.getMov(tecla);
-                    if (mov == Mov::YES) {
-                        game.reset();
-                        liberarNiveles();
-                        construirNivel(1);
-                        cambiarANivel(1);
 
-                        estadoActual = GameState::PLAYING;
+                    if (mov == Mov::UP || mov == Mov::DOWN) {
+                        seleccion = (mov == Mov::UP) ? 0 : 1;
+                        brillante = true;          // al moverte, la opción se ve brillante de inmediato
+                        cuentaParpadeo = 0;
+                        Pantallas::menuOpciones(seleccion, brillante);
+                    }
+                    else if (mov == Mov::YES) {
+                        if (seleccion == 0) {
+                            estadoActual = GameState::NAME_INPUT;
+                        }
+                        else {
+                            ejecutandoJuego = false;
+                        }
                         enMenu = false;
                     }
                     else if (mov == Mov::EXIT) {
                         ejecutandoJuego = false;
                         enMenu = false;
                     }
+                    tecla = terminal.obtenerSiguiente();
+                }
+
+                if (enMenu) {
+                    cuentaLluvia++;
+                    if (cuentaLluvia >= 5) {        // ~0.15 s: cada diamante baja una fila
+                        cuentaLluvia = 0;
+                        Pantallas::menuLluvia(lluvia);
+                    }
+                    cuentaParpadeo++;
+                    if (cuentaParpadeo >= 16) {     // ~0.5 s: la opción elegida cambia de brillo
+                        cuentaParpadeo = 0;
+                        brillante = !brillante;
+                        Pantallas::menuOpciones(seleccion, brillante);
+                    }
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            }
+        }
+
+        // ==========================================
+            // ESTADO: INGRESO DE NOMBRE
+        // ==========================================
+        else if (estadoActual == GameState::NAME_INPUT) {
+            const int MAX_NOMBRE = 10;
+            string nombre = "";
+            bool cursorVisible = true;
+            int ticksParpadeo = 0;
+
+            Pantallas::pedirNombre();
+            Pantallas::campoNombre(nombre, cursorVisible);
+            terminal.limpiarBuffer();   // descarta el Enter con el que se llegó aquí
+
+            bool enNombre = true;
+            while (enNombre && ejecutandoJuego) {
+                terminal.pollInputs();
+                bool redibujar = false;
+
+                int tecla = terminal.obtenerSiguiente();
+                while (tecla != 0 && enNombre) {
+                    Mov mov = keyMap.getMov(tecla);
+
+                    if (mov == Mov::YES) {
+                        if (nombre.empty()) {
+                            Pantallas::avisoNombre(true);
+                        }
+                        else {
+                            nombreJugador = nombre;
+                            game.reset();
+                            liberarNiveles();
+                            construirNivel(1);
+                            cambiarANivel(1);
+                            estadoActual = GameState::PLAYING;
+                            enNombre = false;
+                        }
+                    }
+                    else if (mov == Mov::EXIT) {
+                        estadoActual = GameState::MENU;
+                        enNombre = false;
+                    }
+                    else if (mov == Mov::BORRAR) {
+                        if (!nombre.empty()) {
+                            nombre.pop_back();
+                            redibujar = true;
+                        }
+                    }
+                    else if (tecla < 128 && isalnum(tecla) && (int)nombre.size() < MAX_NOMBRE) {
+                        nombre += (char)toupper(tecla);
+                        redibujar = true;
+                        Pantallas::avisoNombre(false);
+                    }
+                    tecla = terminal.obtenerSiguiente();
+                }
+
+                if (enNombre) {
+                    if (redibujar) {
+                        cursorVisible = true;     // al escribir, el cursor se ve de inmediato
+                        ticksParpadeo = 0;
+                    }
+                    else {
+                        ticksParpadeo++;
+                        if (ticksParpadeo >= 16) {   // ~0.5 s a 30 ms por vuelta
+                            ticksParpadeo = 0;
+                            cursorVisible = !cursorVisible;
+                            redibujar = true;
+                        }
+                    }
+                    if (redibujar) Pantallas::campoNombre(nombre, cursorVisible);
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(30));
             }
@@ -232,6 +375,21 @@ int main() {
             if (resultado.dano > 0) {
                 game.perderVida(resultado.dano);
             }
+            // 3b. Corazones: curan, o dan puntos si la vida ya está llena
+            if (resultado.corazones > 0) {
+                if (game.vidaLlena()) {
+                    game.addScore(puntosCorazonLleno);
+                }
+                else {
+                    game.curar(curacionCorazon);
+                }
+                // Se guarda la posición para que no reaparezca al reiniciar con R
+                gemasPorNivel[numeroNivel].push_back({ fisica->getFilaJugador(), fisica->getColJugador() });
+            }
+            // 3c. Enemigos aplastados por rocas: +30 cada uno
+            if (resultado.enemigosMuertos > 0) {
+                game.addScore(resultado.enemigosMuertos * puntosEnemigo);
+            }
 
             // 4. Derrota
             if (game.perder() || game.getVide() <= 0) {
@@ -259,7 +417,10 @@ int main() {
 
             // La carita se pone roja mientras dura la invulnerabilidad tras recibir daño
             render->setJugadorHerido(fisica->getInvulnerableTicks() > 0);
-
+            // Las puertas cambian de símbolo según estén abiertas o cerradas
+            for (int color = 0; color < 3; color++) {
+                render->setPuertaAbierta(color, fisica->getPuertaAbierta(color));
+            }
             // 6. HUD
             GameStats stats;
             stats.lives = game.getVide();
@@ -324,22 +485,16 @@ int main() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(30));
             }
         }
-
         // ==========================================
-        // ESTADO: VICTORIA (se completaron los 3 niveles)
+        // ESTADO: VICTORIA 
         // ==========================================
         else if (estadoActual == GameState::VICTORY) {
             terminal.clearTerminal();
             Pantallas::victory();
+            int posicion = mostrarResultado("PUNTAJE FINAL: ");
 
-            int posicion = puntajes.agregar(game.getScore());
-            terminal.gotoxy(MARGEN_IZQ, 7 + MARGEN_SUP);
-            cout << "PUNTAJE FINAL: " << game.getScore() << endl;
-            if (posicion > 0) cout << string(MARGEN_IZQ, ' ') << "NUEVO RECORD! Posicion " << posicion << endl;
-            cout << endl;
-            puntajes.imprimir(posicion);
-            cout << flush;
-
+            int faseColor = 0;
+            int cuentaColor = 0;
             bool enVictoria = true;
             while (enVictoria && ejecutandoJuego) {
                 terminal.pollInputs();
@@ -351,25 +506,30 @@ int main() {
                         enVictoria = false;
                     }
                 }
+
+                // Animación de NUEVO RECORD: los colores se desplazan cada ~0.25 s
+                if (enVictoria && posicion == 1) {
+                    cuentaColor++;
+                    if (cuentaColor >= 8) {
+                        cuentaColor = 0;
+                        faseColor++;
+                        Pantallas::nuevoRecord(faseColor, FILA_CARTEL);
+                    }
+                }
                 std::this_thread::sleep_for(std::chrono::milliseconds(30));
             }
         }
 
         // ==========================================
-        // ESTADO: GAME OVER
-        // ==========================================
+// ESTADO: GAME OVER
+// ==========================================
         else if (estadoActual == GameState::GAMEOVER) {
             terminal.clearTerminal();
             Pantallas::gameOver();
+            int posicion = mostrarResultado("PUNTAJE OBTENIDO: ");
 
-            int posicion = puntajes.agregar(game.getScore());
-            terminal.gotoxy(MARGEN_IZQ, 7 + MARGEN_SUP);
-            cout << "PUNTAJE OBTENIDO: " << game.getScore() << endl;
-            if (posicion > 0) cout << string(MARGEN_IZQ, ' ') << "NUEVO RECORD! Posicion " << posicion << endl;
-            cout << endl;
-            puntajes.imprimir(posicion);
-            cout << flush;
-
+            int faseColor = 0;
+            int cuentaColor = 0;
             bool enGameOver = true;
             while (enGameOver && ejecutandoJuego) {
                 terminal.pollInputs();
@@ -379,6 +539,15 @@ int main() {
                     if (mov == Mov::YES || mov == Mov::EXIT) {
                         estadoActual = GameState::MENU;
                         enGameOver = false;
+                    }
+                }
+
+                if (enGameOver && posicion == 1) {
+                    cuentaColor++;
+                    if (cuentaColor >= 8) {
+                        cuentaColor = 0;
+                        faseColor++;
+                        Pantallas::nuevoRecord(faseColor, FILA_CARTEL);
                     }
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(30));

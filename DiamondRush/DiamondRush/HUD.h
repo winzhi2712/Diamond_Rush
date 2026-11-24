@@ -45,6 +45,15 @@ private:
         hudBuffer.setValue(row, col, glyph);
     }
 
+    //Convierte segundos a formato reloj m:ss (por ejemplo 272 -> "4:32", 65 -> "1:05")
+    string formatearTiempo(int segundosTotales) {
+        if (segundosTotales < 0) segundosTotales = 0;
+        int minutos = segundosTotales / 60;
+        int segundos = segundosTotales % 60;
+        string relleno = (segundos < 10) ? "0" : "";   // el "0" que hace que 5 segundos se vea como :05
+        return to_string(minutos) + ":" + relleno + to_string(segundos);
+    }
+
 public:
     //constructor
     HUD(Matrix<string>& buffer) : hudBuffer(buffer) {}
@@ -64,7 +73,7 @@ public:
             writeGlyph(0, 7 + i, corazon);
         }
 
-        writeText(0, 20, "TIEMPO: " + to_string(stats.timeRemaining));
+        writeText(0, 20, "TIEMPO: " + formatearTiempo(stats.timeRemaining));
         writeText(1, 0, "PUNTOS: " + to_string(stats.score));
         writeText(1, 20, "NIVEL: " + to_string(stats.currentLevel));
     }

@@ -21,7 +21,8 @@ enum class CellType {
     DOOR_B,     // Puerta azul (B); la abre el botón azul
     BUSH,       // Arbusto destructible 
     WHIP_H,     // Látigo horizontal (─), efecto visual al presionar E
-    WHIP_V      // Látigo vertical (│), efecto visual al presionar E
+    WHIP_V,      // Látigo vertical (│), efecto visual al presionar E
+    HEART       // Corazón: cura vida, o da puntos si la vida está llena
 };
 
 enum class GameState {
@@ -29,7 +30,8 @@ enum class GameState {
     PLAYING,
     PAUSE,
     VICTORY,
-    GAMEOVER
+    GAMEOVER,
+    NAME_INPUT
 };
 
 struct Position {

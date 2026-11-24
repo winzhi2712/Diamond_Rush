@@ -11,7 +11,8 @@ enum class Mov {
 	EXIT,
 	YES,
 	RESTART, // Movimiento para reiniciar el nivel con la tecla R
-	LATIGO
+	LATIGO,
+	BORRAR
 };
 
 class KeyMap {
@@ -35,6 +36,9 @@ public:
 		mapa[256 + 77] = Mov::RIGHT;
 
 		mapa[13] = Mov::YES;   // Para estados
+		mapa[10] = Mov::YES;   // Enter en Linux/Raspberry (la terminal convierte el 13 en 10)
+		mapa[8] = Mov::BORRAR;     // Retroceso en Windows
+		mapa[127] = Mov::BORRAR;   // Retroceso en Linux/Raspberry
 		mapa['p'] = Mov::PAUSE;
 		mapa['P'] = Mov::PAUSE; // Añadido por si acaso presionan P mayúscula
 		mapa[27] = Mov::EXIT;  // ESC

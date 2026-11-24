@@ -10,11 +10,14 @@
 #include "KeyMap.h"
 
 //CONSTANTES DE CONFIGURACIÓN
-const int ticksPorSegundo = 25; // Velocidad del bucle del juego 
+const int ticksPorSegundo = 30; // Velocidad del bucle del juego (antes 25)
 const int ticksInvulnerable = ticksPorSegundo / 2; // Duración de la invulnerabilidad tras recibir daño
 const int contactoDolor = 10; //Daño que resta tocar a un enemigo
 const int danoRoca = 20;      // Daño que resta que te caiga una roca encima
 const int puntosGema = 10;   // Puntos que se suman al recoger un diamante/gema
+const int puntosEnemigo = 30;   // Puntos que da matar a un enemigo con una piedra
+const int curacionCorazon = 10;      // Vida que recupera un corazón
+const int puntosCorazonLleno = 30;   // Puntos que da un corazón si la vida ya está llena
 const int maxEnemigos = 16;               // Número máximo de enemigos permitidos en simultáneo
 const int alcanceLatigo = 3;    // Casillas máximas que alcanza el látigo
 const int alcanceLatigoVertical = 2; // Así en vertical es más corto
@@ -27,8 +30,11 @@ const int ticksPorPasoTira = 2;   // Ticks que tarda la piedra en avanzar una ca
 struct ResultadoTick {
     bool volverAtras = false; // true si el jugador pisó la casilla de entrada (regresar al mapa anterior)
     int puntosGanados = 0;    // Acumulador de puntos obtenidos en este tick
+    int corazones = 0;
+    int enemigosMuertos = 0;  // Enemigos aplastados por rocas en este tick
     int dano = 0;// Daño acumulado que el jugador debe recibir en este tic
     bool nivelGanado = false; // Bandera booleana que indica si el jugador llegó a la salida
+
 };
 
 //ESTRUCTURA DE ENEMIGO
@@ -133,8 +139,8 @@ private:
 
     // Procesa el intento de movimiento del jugador según la dirección recibida (df, dc).
     void moverJugador(int df, int dc, ResultadoTick& res) {
-        mirandoF = df;   
-        mirandoC = dc;   
+        mirandoF = df;
+        mirandoC = dc;
         int nf = filaJugador + df;
         int nc = colJugador + dc;
         if (!dentro(nf, nc)) {
@@ -170,11 +176,16 @@ private:
             res.puntosGanados += puntosGema;
             ponerEnt(nf, nc, CellType::EMPTY);
         }
-
+        // Caso D: Choca con un corazón
+        else if (e == CellType::HEART) {
+            res.corazones++;
+            ponerEnt(nf, nc, CellType::EMPTY);
+        }
         // SI EL JUGADOR CAMINA SOBRE UN ARBUSTO: Lo destruye (convierte en vacío en el mapa fijo)
         if (m == CellType::BUSH) {
             mapa.setValue(nf, nc, CellType::EMPTY);
         }
+
 
         // Actualiza las posiciones de entidades móviles
         ponerEnt(filaJugador, colJugador, CellType::EMPTY);
@@ -185,12 +196,12 @@ private:
         if (m == CellType::EXIT)
             res.nivelGanado = true;
 
-        if (nf == filaInicio && nc == colInicio)  
+        if (nf == filaInicio && nc == colInicio)
             res.volverAtras = true;
     }
 
-    // Quita a un enemigo del arreglo y de la capa móvil
-    void eliminarEnemigoEn(int f, int c) {
+    // Quita a un enemigo del arreglo y de la capa móvil. Devuelve true si había uno en esa casilla.
+    bool eliminarEnemigoEn(int f, int c) {
         for (int i = 0; i < numEnemigos; i++) {
             if (enemigos[i].fila == f && enemigos[i].col == c) {
                 for (int j = i; j < numEnemigos - 1; j++) {
@@ -198,9 +209,10 @@ private:
                 }
                 numEnemigos--;
                 ponerEnt(f, c, CellType::EMPTY);
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     // Hace caer las rocas una celda por tick si hay espacio vacío debajo.
@@ -215,7 +227,9 @@ private:
                 CellType debajo = entEn(f + 1, c);
                 if (rocaCayendo.getValue(f, c) &&
                     (debajo == CellType::ENEMY_H || debajo == CellType::ENEMY_V || debajo == CellType::ENEMY)) {
-                    eliminarEnemigoEn(f + 1, c);
+                    if (eliminarEnemigoEn(f + 1, c)) {
+                        res.enemigosMuertos++;
+                    }
                 }
 
                 if (libreParaMover(f + 1, c)) {
@@ -324,7 +338,7 @@ private:
             }
         }
     }
-    
+
 
     // Borra el dibujo del látigo (solo donde todavía sea látigo)
     void limpiarLatigo() {
@@ -478,8 +492,8 @@ public:
     void colocarJugador(int f, int c) {
         filaJugador = f;
         colJugador = c;
-        filaInicio = f;   
-        colInicio = c;  
+        filaInicio = f;
+        colInicio = c;
         ponerEnt(f, c, CellType::PLAYER);
     }
 
@@ -533,4 +547,9 @@ public:
     int getFilaJugador() { return filaJugador; }
     int getColJugador() { return colJugador; }
     int getInvulnerableTicks() { return invulnerableTicks; }
+    // Indica si la puerta de ese color está abierta (0 = rojo, 1 = verde, 2 = azul)
+    bool getPuertaAbierta(int color) {
+        if (color < 0 || color > 2) return false;
+        return puertaAbierta[color];
+    }
 };

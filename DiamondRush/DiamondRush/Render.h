@@ -27,6 +27,8 @@ private:
     Matrix<string> wallGlyphBuffer;
     bool jugadorHerido = false;   // true = la carita se pinta roja
 
+    bool puertasAbiertas[3] = { false, false, false };   // 0 = rojo, 1 = verde, 2 = azul
+
     bool panelPendiente = true;   // true = hay que dibujar el panel de controles en el siguiente frame
 
     // Escribe una línea del panel a la derecha del mapa (fila 1 = primera fila de la pantalla de juego)
@@ -55,6 +57,30 @@ private:
         return out;
     }
 
+    // Número "al azar" pero siempre igual para los mismos datos: así las manchas de las paredes
+    // no parpadean ni cambian de lugar entre un frame y otro
+    static unsigned int ruido(int a, int b, int semilla) {
+        unsigned int h = (unsigned int)a * 73856093u ^ (unsigned int)b * 19349663u ^ (unsigned int)semilla * 83492791u;
+        h ^= h >> 13;
+        h *= 0x5bd1e995u;
+        h ^= h >> 15;
+        return h;
+    }
+
+    // Color de una pared: café, con manchas de moho verde repartidas por la casilla (fila, col)
+    string colorPared(int fila, int col) {
+        // Las manchas se forman por bloques de 2 filas x 4 columnas (se ven casi cuadrados en la terminal)
+        bool bloqueConMoho = ruido(fila / 2, col / 4, 18) % 100 < 31;   // ~25% de las paredes con moho
+        unsigned int fino = ruido(fila, col, 2) % 100;
+
+        if ((bloqueConMoho && fino < 75) || fino < 3) {   // mancha, más unas pocas motas sueltas
+            if (ruido(fila, col, 3) % 100 < 85)
+                return "\033[48;5;58m\033[38;5;22m";    // verde pantanoso (el más común)
+            return "\033[48;5;64m\033[38;5;22m";        // verde claro (poco)
+        }
+        return ANSI_WALL;   // pared café normal
+    }
+
     string getCharacter(CellType type) {
         switch (type) {
         case CellType::WALL:
@@ -76,8 +102,11 @@ private:
         case CellType::BUTTON_B:
             return "o";
         case CellType::DOOR:
+            return puertasAbiertas[0] ? CHAR_DOOR_OPEN : CHAR_DOOR_CLOSED;
         case CellType::DOOR_G:
+            return puertasAbiertas[1] ? CHAR_DOOR_OPEN : CHAR_DOOR_CLOSED;
         case CellType::DOOR_B:
+            return puertasAbiertas[2] ? CHAR_DOOR_OPEN : CHAR_DOOR_CLOSED;
             return "H";
         case CellType::BUSH:
             return "₪";
@@ -85,6 +114,8 @@ private:
             return "─";
         case CellType::WHIP_V:
             return "│";
+        case CellType::HEART:
+            return CHAR_HEART;
         default:
             return CHAR_EMPTY;
         }
@@ -97,7 +128,7 @@ private:
         case CellType::DIAMOND:
             return "\033[95m";
         case CellType::ROCK:
-            return "\033[37m";   // gris
+            return "\033[38;5;245m";   // gris
         case CellType::PLAYER:
             return jugadorHerido ? "\033[91m" : "\033[93m";   // rojo brillante si está herido, amarillo normal
         case CellType::EXIT:
@@ -120,7 +151,9 @@ private:
             return "\033[92m";   // verde brillante
         case CellType::WHIP_H:
         case CellType::WHIP_V:
-            return "\033[97m";   // blanco brillante
+            return "\033[38;5;130m";   // café
+        case CellType::HEART:
+            return "\033[91m";   // rojo brillante
         default:
             return ANSI_EMPTY;
         }
@@ -148,6 +181,9 @@ public:
     Matrix<string>& getHUDBuffer() { return hudBuffer; }
     Matrix<string>& getWallGlyphBuffer() { return wallGlyphBuffer; }
     void setJugadorHerido(bool herido) { jugadorHerido = herido; }
+    void setPuertaAbierta(int color, bool abierta) {
+        if (color >= 0 && color < 3) puertasAbiertas[color] = abierta;
+    }
 
     // Obliga a redibujar todo en el siguiente frame (por ejemplo, al volver de la pausa)
     void forceFullRedraw() {
@@ -167,10 +203,11 @@ public:
                 cell.character = getCharacter(selected);
                 cell.color = getColor(selected);
 
-             
+
 
                 if (selected == CellType::WALL) {
                     cell.character = wallGlyphBuffer.getValue(r, c);
+                    cell.color = colorPared(r, c);   // café con manchas de moho
                 }
 
                 finalBuffer.setValue(r + 2, c, cell);

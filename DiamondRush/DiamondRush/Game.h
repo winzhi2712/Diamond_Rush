@@ -13,14 +13,15 @@ private:
 
 	std::chrono::steady_clock::time_point start;
 	std::chrono::steady_clock::time_point pausaInicio;
-	const int LIMITE_TIEMPO = 300;
+	const int LIMITE_TIEMPO = 480;
+	const int VIDA_MAX = 100;
 
 public:
 	Game() {
 		reset();
 	}
 	void reset() {
-		vida = 100; // esto es temporal, ya despues lo cambiamos por la vida que quieran poner
+		vida = VIDA_MAX; // esto es temporal, ya despues lo cambiamos por la vida que quieran poner
 		score = 0;
 		start = std::chrono::steady_clock::now();
 		pausaInicio = start;
@@ -45,6 +46,13 @@ public:
 	}
 	void perderVida(int damage) {
 		vida -= damage;
+	}
+	void curar(int cantidad) {
+		vida += cantidad;
+		if (vida > VIDA_MAX) vida = VIDA_MAX;   // nunca pasa del máximo
+	}
+	bool vidaLlena() {
+		return vida >= VIDA_MAX;
 	}
 	int getVide() {
 		return vida;
