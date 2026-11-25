@@ -1,587 +1,609 @@
-#include <iostream>
-#include <string>
-#include <chrono>
-#include <thread>
-#include <cctype>
-#include <vector>
-#include <ctime>
-#include <utility>
+#pragma once
+//Gestiona las diferentes pantallas del juego
+//Incluye el menu principal, pausa, victoria y derrota
 #include "Constantes.h"
-
-#include "Tipos.h"
-#include "MapLoader.h"
-#include "Matrix.h"
-#include "Terminal.h"
-#include "Render.h"
-#include "Pantallas.h"
-#include "KeyMap.h"
-#include "Game.h"
-#include "Fisica.h"
-#include "HUD.h"
-#include "Puntajes.h"
-#include "Benchmark.h"
+#include <string>
+#include <cstdlib>
+#include <iostream>
 
 using namespace std;
-using namespace std::chrono;
 
-const int TOTAL_NIVELES = 3;
-const bool MODO_DEV = true;   // true = teclas 1, 2 y 3 saltan de nivel; PONERLO en false antes de entregar
-
-int main() {
-#ifdef _WIN32
-    SetConsoleOutputCP(65001); // Configurar consola en UTF-8 para Windows
-#endif
-
-    Terminal terminal;
-    terminal.init();
-    srand(static_cast<unsigned>(time(nullptr)));
-    Game game;
-    KeyMap keyMap;
-    Puntajes puntajes;   // Top 5 de puntajes, guardado en puntajes.txt
-    string nombreJugador = "JUGADOR";   // provisorio: en el Paso 7 se pide al jugador antes de empezar
-    const int FILA_CARTEL = 12;   // fila donde van NUEVO RECORD / ENTRAS AL TOP
-    int filaTopActual = 0;        // fila (desde 1) donde quedó el título "MEJORES PUNTAJES" en la última pantalla de resultado
-
-    // Pantalla de resultado (victoria y game over): registra el puntaje, muestra el cartel y el top 5.
-    // Devuelve la posición lograda (0 si no entró al top).
-    // "compacto" = true (game over): sin récord, el top 5 sube justo debajo del puntaje; con puesto 2 a 5, el cartel también sube.
-    auto mostrarResultado = [&](const string& etiquetaPuntaje, bool compacto = false) -> int {
-        int posicion = puntajes.agregar(nombreJugador, game.getScore());
-
-        terminal.gotoxy(0, 9);   // fila 10 de la pantalla
-        cout << string(MARGEN_IZQ, ' ') << nombreJugador << " - " << etiquetaPuntaje << game.getScore();
-
-        int filaTop = FILA_CARTEL + 5;   // (desde 0) el top 5 va debajo del cartel
-        if (posicion == 1) {
-            Pantallas::nuevoRecord(0, FILA_CARTEL);
+// Estado de los diamantes que caen por toda la pantalla del menú
+struct LluviaMenu {
+    static const int N = 40;   // cantidad de diamantes
+    int col[N];
+    int fila[N];                // fila actual; negativa = todavía esperando arriba
+    LluviaMenu() {
+        for (int i = 0; i < N; i++) {
+            col[i] = 2 + rand() % 97;       // columnas 2 a 98
+            fila[i] = -(rand() % 26);       // arrancan escalonados, no todos juntos
         }
-        else if (posicion > 1) {
-            if (compacto) {
-                Pantallas::entrasAlTop(posicion, FILA_CARTEL - 2);
-                filaTop = FILA_CARTEL + 1;
+    }
+};
+
+// Estado de la animación de la pantalla del nombre: la serpiente y la piedra se persiguen en bucle
+struct AnimNombre {
+    int estado = 0;               // 0 = la serpiente huye hacia la derecha y la piedra rueda detrás de ella persiguiéndola
+    // 1 = la piedra huye hacia la izquierda y ahora la serpiente la persigue
+    int rocaX = -9;               // columna (en pixeles) del borde izquierdo de la piedra
+    int serpX = 0;                // columna (en pixeles) del borde izquierdo de la serpiente
+    int giro = 0;                 // fotograma de la piedra (0 a 3)
+    int onda = 0;                 // fase de la ondulación de la serpiente
+    int paso = 0;                 // cuenta pasos (para el parpadeo de la lengua)
+    bool mirandoDerecha = true;
+    bool roja = false;            // false = verde, true = roja
+    AnimNombre() { roja = (rand() % 2 == 1); }
+};
+
+class Pantallas {
+private:
+    // Zona de la animación del nombre (debajo de la tablilla): la fila de arriba, la columna de la izquierda y el ancho en pixeles
+    inline static const int ANIM_FILA = 22;
+    inline static const int ANIM_COL = MARGEN_IZQ + 1;
+    inline static const int ANIM_PX = 36;   // 36 pixeles de 2 columnas = 72 columnas
+
+    inline static const string title1 = "████  ███  ███  █   █  ███  █   █ ████     ████  █   █  ████ █   █ ";
+    inline static const string title2 = "█   █  █  █   █ ██ ██ █   █ ██  █ █   █    █   █ █   █ █     █   █ ";
+    inline static const string title3 = "█   █  █  █████ █ █ █ █   █ █ █ █ █   █    ████  █   █  ███  █████ ";
+    inline static const string title4 = "█   █  █  █   █ █   █ █   █ █  ██ █   █    █  █  █   █     █ █   █ ";
+    inline static const string title5 = "████  ███ █   █ █   █  ███  █   █ ████     █   █  ███  ████  █   █ ";
+
+    inline static const string gameOver1 = " ███   ███  █   █ █████     ███  █   █ █████ ████";
+    inline static const string gameOver2 = "█     █   █ ██ ██ █        █   █ █   █ █     █   █";
+    inline static const string gameOver3 = "█  ██ █████ █ █ █ ████     █   █ █   █ ████  ████";
+    inline static const string gameOver4 = "█   █ █   █ █   █ █        █   █  █ █  █     █  █ ";
+    inline static const string gameOver5 = " ███  █   █ █   █ █████     ███    █   █████ █   █ ";
+
+    inline static const string victory1 = "█   █ ███  ███  █████  ███  ████  █   █ ";
+    inline static const string victory2 = "█   █  █  █       █   █   █ █   █  █ █  ";
+    inline static const string victory3 = "█   █  █  █       █   █   █ ████    █";
+    inline static const string victory4 = " █ █   █  █       █   █   █ █  █    █ ";
+    inline static const string victory5 = "  █   ███  ███    █    ███  █   █   █ ";
+
+    inline static const string pause1 = "████   ███  █   █  ████ █████ ";
+    inline static const string pause2 = "█   █ █   █ █   █ █     █     ";
+    inline static const string pause3 = "████  █████ █   █  ███  ████  ";
+    inline static const string pause4 = "█     █   █ █   █     █ █     ";
+    inline static const string pause5 = "█     █   █  ███  ████  █████ ";
+
+    // Margen izquierdo de las pantallas
+    static string pad() {
+        return string(MARGEN_IZQ, ' ');
+    }
+    inline static const int TABLILLA_ANCHO = 40;   // ancho interior de la tablilla del nombre
+    // Medidas del marco del menú principal
+    inline static const int LLUVIA_FILAS = 26;   // hasta qué fila caen los diamantes
+
+    // true si en esa celda hay texto del menú (los diamantes pasan "por detrás" y no se dibujan ahí)
+    static bool zonaTextoMenu(int fila, int col) {
+        if (fila >= 2 && fila <= 10 && col >= 14 && col <= 86) return true;     // título y subrayado
+        if (fila >= 11 && fila <= 15 && col >= 43 && col <= 57) return true;    // opciones
+        if (fila >= 16 && fila <= 24 && col >= 8 && col <= 92) return true;     // top 5 y muñequitos
+        return false;
+    }
+
+    // Color de cada "pixel" del explorador, la piedra y la sangre
+    static string colorPixel(char c) {
+        switch (c) {
+        case 'H': return "\033[38;5;94m";    // sombrero café
+        case 'h': return "\033[38;5;130m";   // cinta del sombrero
+        case 'S': return "\033[38;5;180m";   // piel
+        case 'E': return "\033[38;5;232m";   // ojos
+        case 'Y': return "\033[38;5;178m";   // camisa amarilla
+        case 'y': return "\033[38;5;136m";   // manga en sombra
+        case 'B': return "\033[38;5;94m";    // cinturón
+        case 'K': return "\033[38;5;240m";   // botas
+        case 'R': return "\033[38;5;245m";   // piedra (gris, igual que las rocas del juego)
+        case 'r': return "\033[38;5;240m";   // piedra en sombra
+        case 'L': return "\033[38;5;250m";   // brillo de la piedra
+        case 'x': return "\033[38;5;124m";   // sangre sobre la piedra
+        case 'P': return "\033[38;5;124m";   // charco de sangre
+        case 'p': return "\033[38;5;88m";    // borde oscuro del charco
+        case 'Q': return "\033[38;5;160m";   // brillo del charco
+        }
+        return "";
+    }
+
+    // Dibuja un explorador de bloques con su látigo. (fila, col) es la esquina superior izquierda.
+    // derecha = false: látigo a la derecha. derecha = true: es el espejo.
+    static void explorador(int fila, int col, bool derecha) {
+        // Cuerpo: cada letra es un pixel de 2 columnas ('.' = vacío). 7 de ancho x 8 de alto.
+        const string sprite[8] = {
+            ".HHHHH.",   // copa del sombrero
+            ".hhhhh.",   // cinta
+            "HHHHHHH",   // ala
+            ".SESES.",   // ojos
+            ".SSSSS.",   // cara
+            "yYYYYYS",   // brazos (la mano derecha sostiene el látigo)
+            "YYBBBYY",   // cinturón
+            ".KK.KK."    // botas
+        };
+        // Látigo con medios bloques: 4 filas (las filas 3 a 6 del sprite) x 10 columnas.
+        // Sale de la mano (fila 5), baja un poco, sube en onda y termina en la punta arriba.
+        const string latigo[4][10] = {
+            { " ", " ", " ", " ", " ", " ", " ", " ", "▄", "▄" },
+            { " ", " ", " ", " ", " ", " ", "▄", "▀", " ", " " },
+            { "▄", "▄", " ", " ", "▄", "▀", " ", " ", " ", " " },
+            { " ", " ", "▀", "▀", " ", " ", " ", " ", " ", " " }
+        };
+        const string COLOR_LATIGO = "\033[38;5;130m";
+        const string COLOR_PUNTA = "\033[38;2;60;35;20m";   // café muy oscuro
+
+        for (int r = 0; r < 8; r++) {
+            // --- el cuerpo ---
+            string cuerpo = "";
+            for (int i = 0; i < 7; i++) {
+                char c = sprite[r][derecha ? 6 - i : i];
+                if (c == '.') cuerpo += "  ";
+                else cuerpo += colorPixel(c) + "██" + ANSI_RESET;
+            }
+            // --- el látigo (solo en las filas 3 a 6) ---
+            string whip = "";
+            if (r >= 3 && r <= 6) {
+                for (int i = 0; i < 10; i++) {
+                    int idx = derecha ? 9 - i : i;
+                    const string& cel = latigo[r - 3][idx];
+                    if (cel == " ") whip += " ";
+                    else {
+                        bool punta = (r == 3 && idx >= 8);   // la punta es café muy oscuro
+                        whip += (punta ? COLOR_PUNTA : COLOR_LATIGO) + cel + ANSI_RESET;
+                    }
+                }
             }
             else {
-                Pantallas::entrasAlTop(posicion, FILA_CARTEL);
+                whip = string(10, ' ');
+            }
+            cout << irA(fila + r, col) << (derecha ? whip + cuerpo : cuerpo + whip);
+        }
+    }
+
+    // Explorador sin látigo que mira hacia la izquierda (hacia la tablilla del nombre).
+    // (fila, col) es la esquina superior izquierda. "escala" agranda el dibujo: cada pixel pasa a medir
+    // (2 * escala) columnas x escala filas. Con escala 1 mide 14 x 8; con escala 2, 28 x 16; con 3, 42 x 24.
+    static void exploradorMirando(int fila, int col, int escala = 2) {
+        // Cada letra es un pixel ('.' = vacío). 'a' y 'b' son medio pixel de piel y medio pixel de ojo negro.
+        const string sprite[8] = {
+            ".HHHHH.",   // copa del sombrero
+            ".hhhhh.",   // cinta
+            "HHHHHHH",   // ala
+            ".ababS.",   // ojos negros corridos medio pixel a la izquierda (a = mitad derecha oscura, b = mitad izquierda oscura)
+            ".SSSSS.",   // cara
+            "SYYYYYy",   // brazos
+            "YYBBBYY",   // cinturón
+            ".KK.KK."    // botas
+        };
+        for (int r = 0; r < 8; r++) {
+            string linea = "";
+            for (int i = 0; i < 7; i++) {
+                char c = sprite[r][i];
+                if (c == '.') linea += string(2 * escala, ' ');
+                else if (c == 'a' || c == 'b') {
+                    // medio pixel = "escala" columnas: una mitad de piel y la otra de ojo negro
+                    string piel = colorPixel('S'), ojo = colorPixel('E');
+                    string mitad = "";
+                    for (int k = 0; k < escala; k++) mitad += "█";
+                    if (c == 'a') linea += piel + mitad + ojo + mitad + ANSI_RESET;   // piel | ojo
+                    else          linea += ojo + mitad + piel + mitad + ANSI_RESET;   // ojo | piel
+                }
+                else {
+                    linea += colorPixel(c);
+                    for (int k = 0; k < escala; k++) linea += "██";
+                    linea += ANSI_RESET;
+                }
+            }
+            // la misma fila se repite "escala" veces hacia abajo
+            for (int k = 0; k < escala; k++) {
+                cout << irA(fila + r * escala + k, col) << linea;
             }
         }
-        else if (compacto) {
-            filaTop = FILA_CARTEL - 1;   // sin cartel: el top 5 queda pegado al puntaje
+    }
+
+    // Pone una "|" a la derecha de cada bloque de █: reemplaza el primer espacio que le sigue,
+    // así el ancho del texto no cambia. Se aplica al imprimir, por eso los textos quedan limpios.
+    static string sombra(const string& s) {
+        string r = "";
+        bool trasBloque = false;
+        size_t i = 0;
+        while (i < s.size()) {
+            unsigned char c = s[i];
+            size_t n = 1;
+            if (c >= 0xF0) n = 4;
+            else if (c >= 0xE0) n = 3;
+            else if (c >= 0xC0) n = 2;
+            string ch = s.substr(i, n);
+            if (ch == "█") { r += ch; trasBloque = true; }
+            else if (ch == " " && trasBloque) { r += "|"; trasBloque = false; }
+            else { r += ch; trasBloque = false; }
+            i += n;
+        }
+        return r;
+    }
+
+    // Corta un texto UTF-8 por columnas de pantalla (no por bytes): cada "█" ocupa 3 bytes pero 1 columna.
+    // "desde" empieza en 0.
+    static string cortarColumnas(const string& s, int desde, int cuantas) {
+        string salida = "";
+        int col = 0;
+        size_t i = 0;
+        while (i < s.size() && col < desde + cuantas) {
+            unsigned char c = s[i];
+            size_t n = 1;
+            if (c >= 0xF0) n = 4;
+            else if (c >= 0xE0) n = 3;
+            else if (c >= 0xC0) n = 2;
+            if (col >= desde) salida += s.substr(i, n);
+            i += n;
+            col++;
+        }
+        return salida;
+    }
+    // Mueve el cursor a una fila y columna de la pantalla (empiezan en 1)
+    static string irA(int fila, int col) {
+        return "\033[" + to_string(fila) + ";" + to_string(col) + "H";
+    }
+
+    // Dibuja una fila de la tablilla: borde, contenido centrado y borde.
+    // "anchoVisible" es cuántas columnas ocupa el contenido en pantalla (sin contar los códigos de color)
+    static void lineaTablilla(int fila, const string& contenido, int anchoVisible) {
+        int izq = (TABLILLA_ANCHO - anchoVisible) / 2;
+        int der = TABLILLA_ANCHO - anchoVisible - izq;
+        cout << irA(fila, MARGEN_IZQ + 1)
+            << ANSI_CAFE << WALL_V << ANSI_RESET
+            << string(izq, ' ') << contenido << ANSI_RESET << string(der, ' ')
+            << ANSI_CAFE << WALL_V << ANSI_RESET;
+    }
+    // Una fila (0 a 4) de una letra grande de 5 columnas. Solo están las letras de NUEVO RECORD.
+    static string glifo(char letra, int fila) {
+        static const string gN[5] = { "█   █", "██  █", "█ █ █", "█  ██", "█   █" };
+        static const string gU[5] = { "█   █", "█   █", "█   █", "█   █", " ███ " };
+        static const string gE[5] = { "█████", "█    ", "████ ", "█    ", "█████" };
+        static const string gV[5] = { "█   █", "█   █", "█   █", " █ █ ", "  █  " };
+        static const string gO[5] = { " ███ ", "█   █", "█   █", "█   █", " ███ " };
+        static const string gR[5] = { "████ ", "█   █", "████ ", "█  █ ", "█   █" };
+        static const string gC[5] = { " ████", "█    ", "█    ", "█    ", " ████" };
+        static const string gD[5] = { "████ ", "█   █", "█   █", "█   █", "████ " };
+
+        switch (letra) {
+        case 'N': return gN[fila];
+        case 'U': return gU[fila];
+        case 'E': return gE[fila];
+        case 'V': return gV[fila];
+        case 'O': return gO[fila];
+        case 'R': return gR[fila];
+        case 'C': return gC[fila];
+        case 'D': return gD[fila];
+        }
+        return "     ";
+    }
+
+    // Una fila de una palabra completa en letras grandes (una columna de separación entre letras)
+    static string filaPalabra(const string& palabra, int fila) {
+        string salida = "";
+        for (size_t i = 0; i < palabra.size(); i++) {
+            if (i > 0) salida += " ";
+            salida += glifo(palabra[i], fila);
+        }
+        return salida;
+    }
+
+public:
+
+    static void gameOver() {
+        cout << string(MARGEN_SUP, '\n');
+        cout << "\033[31m"; // color rojo que no se habia definido en constantes
+        const string* f[5] = { &gameOver1, &gameOver2, &gameOver3, &gameOver4, &gameOver5 };
+        for (int i = 0; i < 5; i++) cout << pad() << sombra(*f[i]) << endl;
+        cout << pad() << "PRESS ENTER TO RETRY" << endl;
+        cout << pad() << "PRESS ESC TO EXIT";
+        cout << ANSI_RESET << flush;
+    }
+
+    static void victory() {
+        cout << string(MARGEN_SUP, '\n');
+        cout << ANSI_PLAYER; //color
+        const string* f[5] = { &victory1, &victory2, &victory3, &victory4, &victory5 };
+        for (int i = 0; i < 5; i++) cout << pad() << sombra(*f[i]) << endl;
+        cout << pad() << "PRESS ENTER TO RETRY" << endl;
+        cout << pad() << "PRESS ESC TO EXIT";
+        cout << ANSI_RESET;
+    }
+
+    static void pause() {
+        cout << string(MARGEN_SUP, '\n');
+        cout << ANSI_ROCK; //nuevamente es un color nada mas (amarillo)
+        const string* f[5] = { &pause1, &pause2, &pause3, &pause4, &pause5 };
+        for (int i = 0; i < 5; i++) cout << pad() << sombra(*f[i]) << endl;
+        cout << pad() << "PRESS ENTER TO RESUME" << endl;
+        cout << pad() << "PRESS ESC TO EXIT";
+        cout << ANSI_RESET;
+    }
+    // Dibuja la tablilla completa donde se escribe el nombre (se llama una sola vez)
+    static void pedirNombre() {
+        string horizontal;
+        for (int i = 0; i < TABLILLA_ANCHO; i++) horizontal += WALL_H;
+
+        cout << "\033[2J\033[H";
+        cout << irA(MARGEN_SUP + 1, MARGEN_IZQ + 1) << ANSI_CAFE
+            << WALL_TL << horizontal << WALL_TR << ANSI_RESET;
+
+        for (int r = 2; r <= 8; r += 2) {
+            lineaTablilla(MARGEN_SUP + r, "", 0);   // filas en blanco
         }
 
-        filaTopActual = filaTop + 1;
-        terminal.gotoxy(0, filaTop);
-        puntajes.imprimir(posicion);
+        const string titulo = "ESCRIBE TU NOMBRE, EXPLORADOR(A)";
+        lineaTablilla(MARGEN_SUP + 3, ANSI_ORO + titulo, (int)titulo.size());
+
+        cout << irA(MARGEN_SUP + 9, MARGEN_IZQ + 1) << ANSI_CAFE
+            << WALL_BL << horizontal << WALL_BR << ANSI_RESET;
+
+        cout << irA(MARGEN_SUP + 11, MARGEN_IZQ + 1) << ANSI_ORO << "ENTER      " << ANSI_RESET << "Confirmar";
+        cout << irA(MARGEN_SUP + 12, MARGEN_IZQ + 1) << ANSI_ORO << "RETROCESO  " << ANSI_RESET << "Borrar letra";
+        cout << irA(MARGEN_SUP + 13, MARGEN_IZQ + 1) << ANSI_ORO << "ESC        " << ANSI_RESET << "Volver";
+
+        // Explorador grande (escala 2) a la derecha de la tablilla, que mide TABLILLA_ANCHO + 2 columnas con sus bordes.
+        // Su parte de arriba queda a la altura del borde superior de la tablilla.
+        exploradorMirando(MARGEN_SUP + 1, MARGEN_IZQ + 1 + TABLILLA_ANCHO + 2 + 5, 2);
+
+        // Suelo por donde ruedan la piedra y la serpiente
+        string suelo = "";
+        for (int i = 0; i < ANIM_PX * 2; i++) suelo += WALL_H;
+        cout << irA(ANIM_FILA + 4, ANIM_COL) << ANSI_CAFE << suelo << ANSI_RESET;
         cout << flush;
-        return posicion;
-        };
-
-
-    GameState estadoActual = GameState::MENU;
-
-    // Cada nivel conserva su propio estado para poder ir y volver entre mapas
-    Render* renders[TOTAL_NIVELES + 1] = { nullptr };
-    Fisica* fisicas[TOTAL_NIVELES + 1] = { nullptr };
-    vector<pair<int, int>> gemasPorNivel[TOTAL_NIVELES + 1];   // gemas ya recolectadas en cada nivel
-    Render* render = nullptr;   // nivel que se está jugando ahora
-    Fisica* fisica = nullptr;
-
-    bool ejecutandoJuego = true;
-    int numeroNivel = 1;
-
-    // Construye (o reconstruye desde cero) el nivel n leyendo nivelN.txt
-    auto construirNivel = [&](int n) {
-        GameMap datos = MapLoader::cargarNivel("nivel" + to_string(n) + ".txt");
-
-        if (fisicas[n] != nullptr) { delete fisicas[n]; fisicas[n] = nullptr; }
-        if (renders[n] != nullptr) { delete renders[n]; renders[n] = nullptr; }
-
-        renders[n] = new Render(MAP_HEIGHT, MAP_WIDTH);
-        for (int r = 0; r < MAP_HEIGHT; r++) {
-            for (int c = 0; c < MAP_WIDTH; c++) {
-                renders[n]->getMapBuffer().setValue(r, c, datos.grid[r][c]);
-                renders[n]->getEntitiesBuffer().setValue(r, c, datos.entities[r][c]);
-                renders[n]->getWallGlyphBuffer().setValue(r, c, datos.glyphs[r][c]);
-            }
-        }
-
-        fisicas[n] = new Fisica(renders[n]->getMapBuffer(), renders[n]->getEntitiesBuffer());
-        // colocarJugador recibe (fila, columna)
-        fisicas[n]->colocarJugador(datos.playerY, datos.playerX);
-
-        for (const auto& ene : datos.enemigos) {
-            fisicas[n]->agregarEnemigo(ene.fila, ene.col, ene.dirFila, ene.dirCol, ene.ticks, ene.persigue, ene.tipoCelda);
-        }
-
-        gemasPorNivel[n].clear();
-        };
-
-    // Cambia el nivel que se está jugando (el nivel ya debe estar construido)
-    auto cambiarANivel = [&](int n) {
-        numeroNivel = n;
-        render = renders[n];
-        fisica = fisicas[n];
-        terminal.clearTerminal();
-        render->forceFullRedraw();
-        };
-
-    // Libera todos los niveles (al empezar una partida nueva o al salir)
-    auto liberarNiveles = [&]() {
-        for (int i = 1; i <= TOTAL_NIVELES; i++) {
-            if (fisicas[i] != nullptr) { delete fisicas[i]; fisicas[i] = nullptr; }
-            if (renders[i] != nullptr) { delete renders[i]; renders[i] = nullptr; }
-            gemasPorNivel[i].clear();
-        }
-        render = nullptr;
-        fisica = nullptr;
-        };
-
-    Benchmark benchmark;
-    int frameActual = 0;
-    const bool MODO_BENCHMARK = false; //Poner en true para activar el modo benchmark
-    const int FRAMES_BENCHAMRK = 500;
-
-    // No se arranca hasta que la terminal sea lo bastante grande (en benchmark se omite)
-    if (!MODO_BENCHMARK) {
-        while (ejecutandoJuego && !terminal.checkMinSize()) {
-            terminal.clearTerminal();
-            cout << "La terminal es muy pequena." << endl;
-            cout << "Se necesita al menos " << MIN_TERMINAL_WIDTH << " columnas x "
-                << MIN_TERMINAL_HEIGHT << " filas." << endl;
-            cout << "Agrandala y el juego continuara solo. (ESC para salir)" << endl;
-
-            for (int i = 0; i < 10 && ejecutandoJuego; i++) {   // espera ~0.5 s revisando ESC
-                terminal.pollInputs();
-                int tecla = terminal.obtenerSiguiente();
-                if (tecla != 0 && keyMap.getMov(tecla) == Mov::EXIT) {
-                    ejecutandoJuego = false;
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            }
-        }
     }
 
-    if (MODO_BENCHMARK) {
-        benchmark.startBench(false);
-        game.reset();
-        liberarNiveles();
-        construirNivel(1);
-        cambiarANivel(1);
-        estadoActual = GameState::PLAYING;
-    }
-    auto medirT = [](auto&& fn) {
-        auto start = std::chrono::steady_clock::now();
-        fn();
-        auto end = std::chrono::steady_clock::now();
-        return std::chrono::duration<double, std::micro>(end - start).count();
+    // Avanza un paso la animación y la dibuja. Dos fases que se repiten en bucle:
+    //   fase 0: la serpiente huye de izquierda a derecha y la piedra rueda detrás de ella persiguiéndola
+    //   fase 1: la piedra huye de derecha a izquierda y ahora la serpiente la persigue
+    // Entre las dos siempre queda un espacio, así que nunca se atraviesan. La serpiente sale verde o roja al azar.
+    static void animarNombre(AnimNombre& a) {
+        const int RW = 5;          // ancho de la piedra (pixeles)
+        const int SW = 11;         // ancho de la serpiente: 10 de cuerpo + 1 de lengua
+        const int ESPACIO = 4;     // pixeles libres entre la piedra y la serpiente
+        const int EW = 3;          // ancho del explorador (pixeles)
+        const int GAP_EXP = 3;     // pixeles libres entre el explorador y quien va detrás de él
+
+        // ---- Mover ----
+        a.paso++;
+        a.onda = (a.onda + 1) % 6;
+        if (a.estado == 0) {
+            a.serpX++;
+            a.rocaX++;
+            a.giro = (a.giro + 1) % 4;
+            a.mirandoDerecha = true;
+            if (a.rocaX >= ANIM_PX) {                  // los dos salieron por la derecha
+                a.estado = 1;
+                a.rocaX = ANIM_PX;                     // la piedra entra por la derecha, al frente
+                a.serpX = a.rocaX + RW + ESPACIO;      // la serpiente detrás de ella
+                // y el explorador al final: el orden siempre es piedra, serpiente, explorador
+                a.mirandoDerecha = false;
+                a.roja = (rand() % 2 == 1);            // en cada vuelta puede cambiar de color
+            }
+        }
+        else {
+            a.serpX--;
+            a.rocaX--;
+            a.giro = (a.giro + 3) % 4;                 // la piedra gira al revés
+            a.mirandoDerecha = false;
+            if (a.serpX + SW + GAP_EXP + EW <= 0) {    // los tres salieron por la izquierda (el explorador va al final)
+                a.estado = 0;
+                a.serpX = -SW - EW - GAP_EXP;          // el explorador entra primero por la izquierda (va al frente)
+                a.rocaX = a.serpX - ESPACIO - RW;      // y la serpiente y la piedra van detrás de él
+                a.mirandoDerecha = true;
+                a.roja = (rand() % 2 == 1);
+            }
+        }
+
+        // ---- Preparar el dibujo (4 filas x ANIM_PX pixeles; cada celda es un pixel de 2 columnas) ----
+        static const string ROCA[4][4] = {
+            { ".RRR.", "RrRRR", "RRRRR", ".rrr." },
+            { ".RRR.", "RRRrR", "RRRRR", ".rrr." },
+            { ".RRR.", "RRRRR", "RRRrR", ".rrr." },
+            { ".RRR.", "RRRRR", "RrRRR", ".rrr." }
         };
-    while (ejecutandoJuego) {
+        string celda[4][ANIM_PX];
+        for (int r = 0; r < 4; r++)
+            for (int p = 0; p < ANIM_PX; p++) celda[r][p] = "  ";
 
-        // ==========================================
-        // ESTADO: MENÚ PRINCIPAL
-        // ==========================================
-        if (estadoActual == GameState::MENU) {
-            Pantallas::menuPrincipal();
-            puntajes.dibujarTop(MENU_TOP_FILA, MENU_TOP_COL);
-
-            int seleccion = 0;        // 0 = JUGAR, 1 = SALIR
-            bool brillante = true;
-            Pantallas::menuOpciones(seleccion, brillante);
-
-            LluviaMenu lluvia;
-            int cuentaLluvia = 0;
-            int cuentaParpadeo = 0;
-
-            bool enMenu = true;
-            while (enMenu && ejecutandoJuego) {
-                terminal.pollInputs();
-                int tecla = terminal.obtenerSiguiente();
-                while (tecla != 0 && enMenu) {
-                    Mov mov = keyMap.getMov(tecla);
-
-                    if (mov == Mov::UP || mov == Mov::DOWN) {
-                        seleccion = (mov == Mov::UP) ? 0 : 1;
-                        brillante = true;          // al moverte, la opción se ve brillante de inmediato
-                        cuentaParpadeo = 0;
-                        Pantallas::menuOpciones(seleccion, brillante);
-                    }
-                    else if (mov == Mov::YES) {
-                        if (seleccion == 0) {
-                            estadoActual = GameState::NAME_INPUT;
-                        }
-                        else {
-                            ejecutandoJuego = false;
-                        }
-                        enMenu = false;
-                    }
-                    else if (mov == Mov::EXIT) {
-                        ejecutandoJuego = false;
-                        enMenu = false;
-                    }
-                    tecla = terminal.obtenerSiguiente();
-                }
-
-                if (enMenu) {
-                    cuentaLluvia++;
-                    if (cuentaLluvia >= 5) {        // ~0.15 s: cada diamante baja una fila
-                        cuentaLluvia = 0;
-                        Pantallas::menuLluvia(lluvia);
-                    }
-                    cuentaParpadeo++;
-                    if (cuentaParpadeo >= 16) {     // ~0.5 s: la opción elegida cambia de brillo
-                        cuentaParpadeo = 0;
-                        brillante = !brillante;
-                        Pantallas::menuOpciones(seleccion, brillante);
-                    }
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(30));
-            }
-        }
-        // ==========================================
-// ESTADO: INGRESO DE NOMBRE
-// ==========================================
-        else if (estadoActual == GameState::NAME_INPUT) {
-
-            const int MAX_NOMBRE = 10;
-            string nombre = "";
-            bool cursorVisible = true;
-            int ticksParpadeo = 0;
-            AnimNombre animacion;   // piedra rodando y serpiente persiguiéndola
-            int ticksAnimacion = 0;
-
-            Pantallas::pedirNombre();
-            Pantallas::campoNombre(nombre, cursorVisible);
-            Pantallas::animarNombre(animacion);
-            terminal.limpiarBuffer();   // descarta el Enter con el que se llegó aquí
-
-            bool enNombre = true;
-            while (enNombre && ejecutandoJuego) {
-                terminal.pollInputs();
-                bool redibujar = false;
-
-                int tecla = terminal.obtenerSiguiente();
-                while (tecla != 0 && enNombre) {
-                    Mov mov = keyMap.getMov(tecla);
-
-                    if (mov == Mov::YES) {
-                        if (nombre.empty()) {
-                            Pantallas::avisoNombre(true);
-                        }
-                        else {
-                            nombreJugador = nombre;
-                            game.reset();
-                            liberarNiveles();
-                            construirNivel(1);
-                            cambiarANivel(1);
-                            estadoActual = GameState::PLAYING;
-                            enNombre = false;
-                        }
-                    }
-                    else if (mov == Mov::EXIT) {
-                        estadoActual = GameState::MENU;
-                        enNombre = false;
-                    }
-                    else if (mov == Mov::BORRAR) {
-                        if (!nombre.empty()) {
-                            nombre.pop_back();
-                            redibujar = true;
-                        }
-                    }
-                    else if (tecla < 128 && isalnum(tecla) && (int)nombre.size() < MAX_NOMBRE) {
-                        nombre += (char)toupper(tecla);
-                        redibujar = true;
-                        Pantallas::avisoNombre(false);
-                    }
-                    tecla = terminal.obtenerSiguiente();
-                }
-
-                if (enNombre) {
-                    ticksAnimacion++;
-                    if (ticksAnimacion >= 3) {   // ~0.1 s: la animación avanza un paso
-                        ticksAnimacion = 0;
-                        Pantallas::animarNombre(animacion);
-                    }
-                    if (redibujar) {
-                        cursorVisible = true;     // al escribir, el cursor se ve de inmediato
-                        ticksParpadeo = 0;
-                    }
-                    else {
-                        ticksParpadeo++;
-                        if (ticksParpadeo >= 16) {   // ~0.5 s a 30 ms por vuelta
-                            ticksParpadeo = 0;
-                            cursorVisible = !cursorVisible;
-                            redibujar = true;
-                        }
-                    }
-                    if (redibujar) Pantallas::campoNombre(nombre, cursorVisible);
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        for (int r = 0; r < 4; r++) {
+            for (int i = 0; i < RW; i++) {
+                char c = ROCA[a.giro][r][i];
+                int p = a.rocaX + i;
+                if (c == '.' || p < 0 || p >= ANIM_PX) continue;
+                string color = (c == 'R') ? "\033[38;5;245m" : "\033[38;5;240m";
+                celda[r][p] = color + "██" + ANSI_RESET;
             }
         }
 
-        // ==========================================
-        // ESTADO: JUGANDO
-        // ==========================================
-        else if (estadoActual == GameState::PLAYING) {
-            benchmark.startFrame(frameActual);
-            Mov movimiento = Mov::VACIA;
-            double tInput = medirT([&]() {
-                if (benchmark.estaSilencio()) {
-                    static const Mov secuencia[] = {
-                        Mov::RIGHT, Mov::VACIA, Mov::DOWN, Mov::VACIA, Mov::LEFT, Mov::VACIA
-                    };
-                    movimiento = secuencia[frameActual % 6];
+        // La serpiente ondula: la altura de cada segmento sigue un patrón que viaja de la cola hacia la cabeza
+        const int patron[6] = { 1, 0, 0, 1, 2, 2 };
+        const string cuerpo1 = a.roja ? "\033[38;5;196m" : "\033[38;5;34m";
+        const string cuerpo2 = a.roja ? "\033[38;5;124m" : "\033[38;5;28m";
+        const string lengua = "\033[38;5;211m";
+        const string cabeza = a.roja ? "\033[38;5;88m" : "\033[38;5;22m";    // la cabeza: el mismo color pero más oscuro
+        for (int s = 0; s < 10; s++) {               // s = 0 es la cola y s = 9 la cabeza
+            int p = a.mirandoDerecha ? a.serpX + s : a.serpX + 10 - s;
+            int fila = 1 + patron[((s - a.onda) % 6 + 6) % 6];
+            if (p < 0 || p >= ANIM_PX) continue;
+            if (s == 9) {
+                celda[fila][p] = cabeza + "██" + ANSI_RESET;   // la cabeza, sin ojos
+                int pl = a.mirandoDerecha ? p + 1 : p - 1;   // la lengua sale y se esconde
+                if ((a.paso / 3) % 2 == 0 && pl >= 0 && pl < ANIM_PX) {
+                    celda[fila][pl] = a.mirandoDerecha ? lengua + "─" + ANSI_RESET + " "
+                        : " " + lengua + "─" + ANSI_RESET;
                 }
-                else {
-                    terminal.pollInputs();
-                    int tecla = terminal.obtenerSiguiente();
-                    terminal.limpiarBuffer();   // evita que se acumulen teclas y el personaje siga moviéndose
-
-                    if (tecla != 0) {
-                        // Atajo de desarrollo: las teclas 1, 2 y 3 saltan directo a ese nivel
-                        if (MODO_DEV && tecla >= '1' && tecla <= '0' + TOTAL_NIVELES) {
-                            int destino = tecla - '0';
-                            if (fisicas[destino] == nullptr) construirNivel(destino);
-                            cambiarANivel(destino);
-                            return;
-                        }
-                        movimiento = keyMap.getMov(tecla);
-
-                        if (movimiento == Mov::PAUSE) {
-                            game.pausar();
-                            estadoActual = GameState::PAUSE;
-                            movimiento = Mov::VACIA;
-                            return;
-                        }
-                        else if (movimiento == Mov::EXIT) {
-                            ejecutandoJuego = false;
-                            movimiento = Mov::VACIA;
-                            return;
-                        }
-                        // Reiniciar el nivel actual con la tecla R
-                        else if (movimiento == Mov::RESTART) {
-                            vector<pair<int, int>> gemas = gemasPorNivel[numeroNivel];   // copia, porque construirNivel limpia la lista
-                            construirNivel(numeroNivel);
-                            gemasPorNivel[numeroNivel] = gemas;
-
-                            // Borrar las gemas que el jugador ya había agarrado en este nivel
-                            for (const auto& gema : gemas) {
-                                renders[numeroNivel]->getEntitiesBuffer().setValue(gema.first, gema.second, CellType::EMPTY);
-                            }
-                            cambiarANivel(numeroNivel);
-                            movimiento = Mov::VACIA;
-                            return;
-                        }
-                    }
-                }
-                });
-            benchmark.registerInput(tInput);
-            if (!ejecutandoJuego || estadoActual != GameState::PLAYING) {
-                benchmark.endFrame();
-                continue;
             }
-            // 1. Motor de física
-            ResultadoTick resultado;
-            double tFisica = medirT([&]() {
-                resultado = fisica->actualizar(movimiento);
-                });
-            benchmark.registerFisica(tFisica);
-
-            // 2. Puntos por gemas (se recuerda su posición para que no reaparezcan al reiniciar)
-            if (resultado.puntosGanados > 0) {
-                game.addScore(resultado.puntosGanados);
-                gemasPorNivel[numeroNivel].push_back({ fisica->getFilaJugador(), fisica->getColJugador() });
-            }
-
-            // 3. Daño recibido
-            if (resultado.dano > 0) {
-                game.perderVida(resultado.dano);
-            }
-            // 3b. Corazones: curan, o dan puntos si la vida ya está llena
-            if (resultado.corazones > 0) {
-                if (game.vidaLlena()) {
-                    game.addScore(puntosCorazonLleno);
-                }
-                else {
-                    game.curar(curacionCorazon);
-                }
-                // Se guarda la posición para que no reaparezca al reiniciar con R
-                gemasPorNivel[numeroNivel].push_back({ fisica->getFilaJugador(), fisica->getColJugador() });
-            }
-            // 3c. Enemigos aplastados por rocas: +30 cada uno
-            if (resultado.enemigosMuertos > 0) {
-                game.addScore(resultado.enemigosMuertos * puntosEnemigo);
-            }
-
-            // 4. Derrota
-            if (game.perder() || game.getVide() <= 0) {
-                estadoActual = GameState::GAMEOVER;
-                continue;
-            }
-
-            // 5. Cambio de nivel (ir adelante o regresar al mapa anterior)
-            if (resultado.nivelGanado) {
-                if (numeroNivel < TOTAL_NIVELES) {
-                    int siguiente = numeroNivel + 1;
-                    if (fisicas[siguiente] == nullptr) construirNivel(siguiente);
-                    cambiarANivel(siguiente);   // el reloj sigue corriendo: 5 minutos para los tres niveles
-                }
-                else {
-                    game.addScore(game.timeLeft() * 5); // bono por el tiempo que sobró, solo al terminar todo
-                    estadoActual = GameState::VICTORY;
-                }
-                continue;
-            }
-            if (resultado.volverAtras && numeroNivel > 1) {
-                cambiarANivel(numeroNivel - 1);
-                continue;
-            }
-
-            // La carita parpadea entre roja y normal mientras dura la invulnerabilidad tras recibir daño
-            int ticksInv = fisica->getInvulnerableTicks();
-            render->setJugadorHerido(ticksInv > 0 && (ticksInv / 3) % 2 == 0);
-            // Las puertas cambian de símbolo según estén abiertas o cerradas
-            for (int color = 0; color < 3; color++) {
-                render->setPuertaAbierta(color, fisica->getPuertaAbierta(color));
-            }
-            // 6. HUD
-            GameStats stats;
-            stats.lives = game.getVide();
-            stats.score = game.getScore();
-            stats.timeRemaining = game.timeLeft();
-            stats.currentLevel = numeroNivel;
-
-            HUD hud(render->getHUDBuffer());
-            double tHud = medirT([&]() {
-                hud.draw(stats);
-                });
-            benchmark.registerHud(tHud);
-
-            // 7. Renderizado diferencial
-            double tRender = medirT([&]() {
-                render->combineBuffers();
-                if (!benchmark.estaSilencio()) {
-                    render->renderDifferential();
-                }
-                });
-            benchmark.registerRender(tRender);
-            benchmark.endFrame();
-            frameActual++;
-
-            if (benchmark.estaOn() && frameActual >= FRAMES_BENCHAMRK) {
-                benchmark.stopBench();
-                ejecutandoJuego = false;
-                continue;
-            }
-            if (!benchmark.estaSilencio()) {
-                // Ritmo del juego según los ticks por segundo de Fisica.h
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000 / ticksPorSegundo));
+            else {
+                celda[fila][p] = ((s % 2 == 0) ? cuerpo1 : cuerpo2) + "██" + ANSI_RESET;
             }
         }
 
-        // ==========================================
-        // ESTADO: PAUSA
-        // ==========================================
-        else if (estadoActual == GameState::PAUSE) {
-            terminal.clearTerminal();
-            Pantallas::pause();
-            cout << flush;
-
-            bool enPausa = true;
-            while (enPausa && ejecutandoJuego) {
-                terminal.pollInputs();
-                int tecla = terminal.obtenerSiguiente();
-                if (tecla != 0) {
-                    Mov mov = keyMap.getMov(tecla);
-                    if (mov == Mov::YES) {
-                        game.reanudar();
-                        render->forceFullRedraw();
-                        estadoActual = GameState::PLAYING;
-                        enPausa = false;
-                        terminal.clearTerminal();
-                    }
-                    else if (mov == Mov::EXIT) {
-                        estadoActual = GameState::MENU;
-                        enPausa = false;
-                    }
+        // Orden fijo de izquierda a derecha: piedra, serpiente, explorador.
+        // Fase 0 (hacia la derecha): el explorador va al frente y lo persiguen la serpiente y la piedra.
+        // Fase 1 (hacia la izquierda): la piedra va al frente y el explorador persigue a los dos.
+        {
+            const char* cuerpoExp[3] = { "HHH", "SSS", "YYY" };
+            const char* piernasExp[2] = { "K.K", ".K." };   // las piernas alternan para que parezca que corre
+            int exX = a.serpX + SW + GAP_EXP;   // siempre a la derecha de la serpiente
+            for (int r = 0; r < 4; r++) {
+                const char* filaExp = (r == 3) ? piernasExp[a.paso % 2] : cuerpoExp[r];
+                for (int i = 0; i < EW; i++) {
+                    char c = filaExp[i];
+                    int p = exX + i;
+                    if (c == '.' || p < 0 || p >= ANIM_PX) continue;
+                    celda[r][p] = colorPixel(c) + "██" + ANSI_RESET;
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(30));
-            }
-        }
-        // ==========================================
-        // ESTADO: VICTORIA 
-        // ==========================================
-        else if (estadoActual == GameState::VICTORY) {
-            terminal.clearTerminal();
-            Pantallas::victory();
-            int posicion = mostrarResultado("PUNTAJE FINAL: ");
-
-            int faseColor = 0;
-            int cuentaColor = 0;
-            bool enVictoria = true;
-            while (enVictoria && ejecutandoJuego) {
-                terminal.pollInputs();
-                int tecla = terminal.obtenerSiguiente();
-                if (tecla != 0) {
-                    Mov mov = keyMap.getMov(tecla);
-                    if (mov == Mov::YES || mov == Mov::EXIT) {
-                        estadoActual = GameState::MENU;
-                        enVictoria = false;
-                    }
-                }
-
-                // Animación de NUEVO RECORD: los colores se desplazan cada ~0.25 s
-                if (enVictoria && posicion == 1) {
-                    cuentaColor++;
-                    if (cuentaColor >= 8) {
-                        cuentaColor = 0;
-                        faseColor++;
-                        Pantallas::nuevoRecord(faseColor, FILA_CARTEL);
-                    }
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(30));
             }
         }
 
-        // ==========================================
-// ESTADO: GAME OVER
-// ==========================================
-        else if (estadoActual == GameState::GAMEOVER) {
-            terminal.clearTerminal();
-            Pantallas::gameOver();
-            int posicion = mostrarResultado("PUNTAJE OBTENIDO: ", true);
-
-            int faseColor = 0;
-            int cuentaColor = 0;
-            bool enGameOver = true;
-            while (enGameOver && ejecutandoJuego) {
-                terminal.pollInputs();
-                int tecla = terminal.obtenerSiguiente();
-                if (tecla != 0) {
-                    Mov mov = keyMap.getMov(tecla);
-                    if (mov == Mov::YES || mov == Mov::EXIT) {
-                        estadoActual = GameState::MENU;
-                        enGameOver = false;
-                    }
-                }
-
-                if (enGameOver && posicion == 1) {
-                    cuentaColor++;
-                    if (cuentaColor >= 8) {
-                        cuentaColor = 0;
-                        faseColor++;
-                        Pantallas::nuevoRecord(faseColor, FILA_CARTEL);
-                    }
-                }
-                std::this_thread::sleep_for(std::chrono::milliseconds(30));
-            }
+        // ---- Dibujar ----
+        for (int r = 0; r < 4; r++) {
+            string linea = "";
+            for (int p = 0; p < ANIM_PX; p++) linea += celda[r][p];
+            cout << irA(ANIM_FILA + r, ANIM_COL) << linea << ANSI_RESET;
         }
+        cout << flush;
     }
 
-    if (MODO_BENCHMARK) {
-        benchmark.exportCVS("benchmark.csv");
-    }
-    // Limpieza de memoria dinámica al salir
-    liberarNiveles();
+    // Repinta solo las ranuras del nombre y el contador (se llama cada vez que algo cambia)
+    static void campoNombre(const string& nombre, bool cursorVisible) {
+        const int MAX = 10;
+        string ranuras = "";
+        for (int i = 0; i < MAX; i++) {
+            if (i > 0) ranuras += " ";
+            if (i < (int)nombre.size()) {
+                ranuras += ANSI_VERDE + string(1, nombre[i]) + ANSI_RESET;
+            }
+            else if (i == (int)nombre.size() && cursorVisible) {
+                ranuras += ANSI_ORO + string("█") + ANSI_RESET;
+            }
+            else {
+                ranuras += ANSI_MORADO + string("_") + ANSI_RESET;
+            }
+        }
+        lineaTablilla(MARGEN_SUP + 5, ranuras, 2 * MAX - 1);
 
-    return 0;
-}
+        string contador = to_string(nombre.size()) + "/" + to_string(MAX);
+        lineaTablilla(MARGEN_SUP + 7, ANSI_CAFE + contador, (int)contador.size());
+        cout << flush;
+    }
+
+    // Aviso en rojo cuando se intenta confirmar sin escribir nada (mostrar = false lo borra)
+    static void avisoNombre(bool mostrar) {
+        cout << irA(MARGEN_SUP + 15, MARGEN_IZQ + 1);
+        if (mostrar) cout << "\033[91m" << "Escribe al menos una letra" << ANSI_RESET;
+        else cout << string(26, ' ');
+        cout << flush;
+    }
+
+    // Cartel gigante de NUEVO RECORD. "fase" va subiendo para que el brillo recorra las letras (animación).
+    // Ocupa 5 filas empezando en "filaInicio".
+    static void nuevoRecord(int fase, int filaInicio) {
+        // Del oro profundo al blanco y de vuelta: el destello sube por las filas
+        const string paleta[8] = {
+            "\033[1m\033[38;5;178m",   // oro oscuro
+            "\033[1m\033[38;5;220m",   // oro
+            "\033[1m\033[38;5;221m",   // oro claro
+            "\033[1m\033[38;5;228m",   // amarillo clarito
+            "\033[1m\033[97m",         // blanco
+            "\033[1m\033[38;5;228m",   // amarillo clarito
+            "\033[1m\033[38;5;221m",   // oro claro
+            "\033[1m\033[38;5;220m"    // oro
+        };
+        for (int r = 0; r < 5; r++) {
+            cout << irA(filaInicio + r, MARGEN_IZQ + 1) << paleta[(fase + r) % 8]
+                << filaPalabra("NUEVO", r) << "   " << filaPalabra("RECORD", r) << ANSI_RESET;
+        }
+        cout << flush;
+    }
+
+    // Cartel sobrio para los puestos 2 al 5 (una sola línea, sin animación)
+    static void entrasAlTop(int posicion, int filaInicio) {
+        cout << irA(filaInicio + 2, MARGEN_IZQ + 1)
+            << ANSI_VERDE << "♦ ENTRAS AL TOP ♦" << ANSI_RESET
+            << "  Puesto " << posicion << " de 5" << flush;
+    }
+
+    // Dibuja el título del menú de una vez: verde de arbusto, con un corazón rojo en lugar de la O,
+    // un subrayado y los dos exploradores a los lados del top 5
+    static void menuPrincipal() {
+        cout << "\033[2J\033[H";
+
+        // --- Título ---
+        const string* filas[5] = { &title1, &title2, &title3, &title4, &title5 };
+        // Corazón relleno de un solo rojo brillante, con su "|" a la derecha de cada fila. Cada fila mide 8 columnas.
+        const string corazon[5] = {
+            " ██|██| ",
+            "███████|",
+            "▀█████▀|",
+            " ▀███▀| ",
+            "  ▀█▀|  "
+        };
+        const string COLOR_CORAZON = "\033[91m";   // rojo brillante (el mismo de los corazones del juego)
+        // letras antes del corazón + corazón + letras después (sin espacio entre el corazón y la N)
+        const int ANCHO_TITULO = 22 + 8 + 39;
+        int colTitulo = MENU_CENTRO - ANCHO_TITULO / 2;
+
+        for (int r = 0; r < 5; r++) {
+            // La O de DIAMOND ocupa las columnas 22 a 26 (contando desde 0): se reemplaza por el diamante
+            string antes = sombra(cortarColumnas(*filas[r], 0, 22));
+            string despues = sombra(cortarColumnas(*filas[r], 27, 40));
+            // despues.substr(1) quita el espacio que quedaba entre el corazón y la N
+            cout << irA(3 + r, colTitulo) << ANSI_VERDE << antes
+                << COLOR_CORAZON << corazon[r]
+                << ANSI_VERDE << despues.substr(1) << ANSI_RESET;
+        }
+
+        // --- Subrayado: línea doble con un diamante al centro y debajo una línea fina ---
+        string tramo = "";
+        for (int i = 0; i < 33; i++) tramo += WALL_H;
+        cout << irA(9, colTitulo) << ANSI_CAFE << tramo
+            << ANSI_MORADO << " ♦ "
+            << ANSI_CAFE << tramo << ANSI_RESET;
+
+        string fina = "";
+        for (int i = 0; i < 45; i++) fina += "─";
+        cout << irA(10, MENU_CENTRO - 22) << ANSI_VERDE << fina << ANSI_RESET;
+
+        // --- Exploradores a los lados del top 5 (mismo sprite, uno espejado) ---
+        explorador(MENU_TOP_FILA, MENU_CENTRO - 41, false);
+        explorador(MENU_TOP_FILA, MENU_CENTRO + 18, true);
+        cout << flush;
+    }
+
+    // Dibuja JUGAR y SALIR centrados. La elegida lleva "->" y parpadea entre dorado y amarillo clarito.
+    // seleccion: 0 = JUGAR, 1 = SALIR
+    static void menuOpciones(int seleccion, bool brillante) {
+        const string opciones[2] = { "JUGAR", "SALIR" };
+        for (int i = 0; i < 2; i++) {
+            int fila = 12 + i * 2;
+            if (i == seleccion) {
+                string color = brillante ? "\033[1m\033[38;5;220m" : "\033[1m\033[38;5;229m";
+                cout << irA(fila, MENU_CENTRO - 5) << color << "->" << ANSI_RESET;
+                cout << irA(fila, MENU_CENTRO - 2) << color << opciones[i] << ANSI_RESET;
+            }
+            else {
+                cout << irA(fila, MENU_CENTRO - 5) << "  ";
+                cout << irA(fila, MENU_CENTRO - 2) << "\033[37m" << opciones[i] << ANSI_RESET;
+            }
+        }
+        cout << flush;
+    }
+    // Hace bajar una fila a cada diamante. Al llegar abajo reaparece arriba en otra columna.
+    static void menuLluvia(LluviaMenu& ll) {
+        for (int i = 0; i < LluviaMenu::N; i++) {
+            if (ll.fila[i] >= 1 && !zonaTextoMenu(ll.fila[i], ll.col[i])) {
+                cout << irA(ll.fila[i], ll.col[i]) << " ";   // borra el rastro
+            }
+            ll.fila[i]++;
+            if (ll.fila[i] > LLUVIA_FILAS) {
+                ll.col[i] = 2 + rand() % 97;
+                ll.fila[i] = -(rand() % 8);
+            }
+            if (ll.fila[i] >= 1 && !zonaTextoMenu(ll.fila[i], ll.col[i])) {
+                string color = (i % 2 == 0) ? ANSI_MORADO : "\033[38;5;134m";
+                cout << irA(ll.fila[i], ll.col[i]) << color << "♦" << ANSI_RESET;
+            }
+        }
+        cout << flush;
+    }
+};
