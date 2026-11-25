@@ -40,28 +40,41 @@ int main() {
     Puntajes puntajes;   // Top 5 de puntajes, guardado en puntajes.txt
     string nombreJugador = "JUGADOR";   // provisorio: en el Paso 7 se pide al jugador antes de empezar
     const int FILA_CARTEL = 12;   // fila donde van NUEVO RECORD / ENTRAS AL TOP
+    int filaTopActual = 0;        // fila (desde 1) donde quedó el título "MEJORES PUNTAJES" en la última pantalla de resultado
 
     // Pantalla de resultado (victoria y game over): registra el puntaje, muestra el cartel y el top 5.
     // Devuelve la posición lograda (0 si no entró al top).
-    auto mostrarResultado = [&](const string& etiquetaPuntaje) -> int {
+    // "compacto" = true (game over): sin récord, el top 5 sube justo debajo del puntaje; con puesto 2 a 5, el cartel también sube.
+    auto mostrarResultado = [&](const string& etiquetaPuntaje, bool compacto = false) -> int {
         int posicion = puntajes.agregar(nombreJugador, game.getScore());
 
         terminal.gotoxy(0, 9);   // fila 10 de la pantalla
         cout << string(MARGEN_IZQ, ' ') << nombreJugador << " - " << etiquetaPuntaje << game.getScore();
 
+        int filaTop = FILA_CARTEL + 5;   // (desde 0) el top 5 va debajo del cartel
         if (posicion == 1) {
             Pantallas::nuevoRecord(0, FILA_CARTEL);
         }
         else if (posicion > 1) {
-            Pantallas::entrasAlTop(posicion, FILA_CARTEL);
+            if (compacto) {
+                Pantallas::entrasAlTop(posicion, FILA_CARTEL - 2);
+                filaTop = FILA_CARTEL + 1;
+            }
+            else {
+                Pantallas::entrasAlTop(posicion, FILA_CARTEL);
+            }
+        }
+        else if (compacto) {
+            filaTop = FILA_CARTEL - 1;   // sin cartel: el top 5 queda pegado al puntaje
         }
 
-        terminal.gotoxy(0, FILA_CARTEL + 5);   // el top 5 va debajo del cartel
+        filaTopActual = filaTop + 1;
+        terminal.gotoxy(0, filaTop);
         puntajes.imprimir(posicion);
         cout << flush;
         return posicion;
         };
- 
+
 
     GameState estadoActual = GameState::MENU;
 
@@ -160,7 +173,7 @@ int main() {
         fn();
         auto end = std::chrono::steady_clock::now();
         return std::chrono::duration<double, std::micro>(end - start).count();
-    };
+        };
     while (ejecutandoJuego) {
 
         // ==========================================
@@ -223,18 +236,21 @@ int main() {
                 std::this_thread::sleep_for(std::chrono::milliseconds(30));
             }
         }
-
         // ==========================================
-            // ESTADO: INGRESO DE NOMBRE
-        // ==========================================
+// ESTADO: INGRESO DE NOMBRE
+// ==========================================
         else if (estadoActual == GameState::NAME_INPUT) {
+
             const int MAX_NOMBRE = 10;
             string nombre = "";
             bool cursorVisible = true;
             int ticksParpadeo = 0;
+            AnimNombre animacion;   // piedra rodando y serpiente persiguiéndola
+            int ticksAnimacion = 0;
 
             Pantallas::pedirNombre();
             Pantallas::campoNombre(nombre, cursorVisible);
+            Pantallas::animarNombre(animacion);
             terminal.limpiarBuffer();   // descarta el Enter con el que se llegó aquí
 
             bool enNombre = true;
@@ -279,6 +295,11 @@ int main() {
                 }
 
                 if (enNombre) {
+                    ticksAnimacion++;
+                    if (ticksAnimacion >= 3) {   // ~0.1 s: la animación avanza un paso
+                        ticksAnimacion = 0;
+                        Pantallas::animarNombre(animacion);
+                    }
                     if (redibujar) {
                         cursorVisible = true;     // al escribir, el cursor se ve de inmediato
                         ticksParpadeo = 0;
@@ -352,7 +373,7 @@ int main() {
                         }
                     }
                 }
-            });
+                });
             benchmark.registerInput(tInput);
             if (!ejecutandoJuego || estadoActual != GameState::PLAYING) {
                 benchmark.endFrame();
@@ -415,8 +436,9 @@ int main() {
                 continue;
             }
 
-            // La carita se pone roja mientras dura la invulnerabilidad tras recibir daño
-            render->setJugadorHerido(fisica->getInvulnerableTicks() > 0);
+            // La carita parpadea entre roja y normal mientras dura la invulnerabilidad tras recibir daño
+            int ticksInv = fisica->getInvulnerableTicks();
+            render->setJugadorHerido(ticksInv > 0 && (ticksInv / 3) % 2 == 0);
             // Las puertas cambian de símbolo según estén abiertas o cerradas
             for (int color = 0; color < 3; color++) {
                 render->setPuertaAbierta(color, fisica->getPuertaAbierta(color));
@@ -526,7 +548,7 @@ int main() {
         else if (estadoActual == GameState::GAMEOVER) {
             terminal.clearTerminal();
             Pantallas::gameOver();
-            int posicion = mostrarResultado("PUNTAJE OBTENIDO: ");
+            int posicion = mostrarResultado("PUNTAJE OBTENIDO: ", true);
 
             int faseColor = 0;
             int cuentaColor = 0;

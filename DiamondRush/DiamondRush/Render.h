@@ -36,6 +36,55 @@ private:
         return "\033[" + to_string(fila + MARGEN_SUP) + ";" + to_string(MARGEN_IZQ + MAP_WIDTH + 4) + "H" + texto;
     }
 
+    // Color de cada "pixel" del explorador del panel
+    static string colorPixelPanel(char c) {
+        switch (c) {
+        case 'H': return "\033[38;5;94m";    // sombrero café
+        case 'h': return "\033[38;5;130m";   // cinta del sombrero
+        case 'S': return "\033[38;5;180m";   // piel
+        case 'E': return "\033[38;5;232m";   // ojos
+        case 'Y': return "\033[38;5;178m";   // camisa amarilla
+        case 'B': return "\033[38;5;94m";    // cinturón
+        case 'K': return "\033[38;5;240m";   // botas
+        case 'R': return "\033[38;5;245m";   // piedra (gris, igual que las rocas del juego)
+        case 'r': return "\033[38;5;240m";   // piedra en sombra
+        }
+        return "";
+    }
+
+    // Explorador de bloques sosteniendo una piedra enorme sobre su cabeza.
+    // "fila" es la primera fila del panel donde se dibuja. Cada pixel mide 2 columnas; 9 de ancho x 14 de alto.
+    string exploradorCargando(int fila) {
+        const string sprite[14] = {
+            "..rRRRr..",   // piedra (más grande que el explorador)
+            ".rRRRRRr.",
+            "rRRRRRRRr",
+            "rRRRRRRRr",
+            ".rRRRRRr.",
+            ".SrrrrrS.",   // manos sujetando la piedra
+            ".YHHHHHY.",   // copa del sombrero (brazos arriba a los lados)
+            ".YhhhhhY.",   // cinta
+            ".YHHHHHY.",   // ala
+            ".YSESESY.",   // ojos
+            ".YSSSSSY.",   // cara
+            ".YYBBBYY.",   // cinturón
+            "..YYYYY..",   // torso
+            "..KK.KK.."    // botas
+        };
+        const int sangria = 6;   // espacios a la izquierda para centrarlo en el panel (31 columnas de ancho)
+        string out = "";
+        for (int r = 0; r < 14; r++) {
+            string linea = string(sangria, ' ');
+            for (int i = 0; i < 9; i++) {
+                char c = sprite[r][i];
+                if (c == '.') linea += "  ";
+                else linea += colorPixelPanel(c) + "██" + ANSI_RESET;
+            }
+            out += lineaPanel(fila + r, linea);
+        }
+        return out;
+    }
+
     // Panel lateral con los controles y el valor de las gemas
     string panelTexto() {
         const string titulo = "\033[1m\033[96m";
@@ -52,8 +101,12 @@ private:
         f++;
 
         out += lineaPanel(f++, titulo + "PUNTOS" + ANSI_RESET);
-        out += lineaPanel(f++, "\033[95m" + CHAR_DIAMOND + ANSI_RESET + " = " + to_string(puntosGema) + " puntos");
-        out += lineaPanel(f++, "Tiempo sobrante = 5 pts/seg");
+        out += lineaPanel(f++, "\033[95m" + CHAR_DIAMOND + ANSI_RESET + " = +" + to_string(puntosGema) + " puntos");
+        out += lineaPanel(f++, "Eliminar enemigo = +" + to_string(puntosEnemigo) + " puntos");
+        out += lineaPanel(f++, "Tiempo sobrante = +5 pts/seg");
+        f++;
+
+        out += exploradorCargando(f);
         return out;
     }
 
@@ -130,7 +183,7 @@ private:
         case CellType::ROCK:
             return "\033[38;5;245m";   // gris
         case CellType::PLAYER:
-            return jugadorHerido ? "\033[91m" : "\033[93m";   // rojo brillante si está herido, amarillo normal
+            return jugadorHerido ? "\033[91m" : "\033[38;5;223m";   // rojo brillante si está herido, beige normal
         case CellType::EXIT:
             return ANSI_DIAMOND;
         case CellType::ENEMY:
